@@ -1,0 +1,61 @@
+<?php
+namespace App\Services;
+
+use App\Models\Doctor;
+use App\Models\TimeSlot;
+use Carbon\Carbon;
+
+class TimeSlotService
+{
+    public function generateTimeSlots(Doctor $doctor, int $daysToGenerate = 30)
+    {
+        $slots = [];
+        $now = Carbon::now()->startOfDay();
+        $endDate = $now->copy()->addDays($daysToGenerate);
+
+        foreach ($doctor->schedules as $schedule) {
+            $dayOfWeek = strtolower($schedule->day);
+
+            $currentDate = $now->copy();
+            while ($currentDate <= $endDate) {
+                if (strtolower($currentDate->englishDayOfWeek) === $dayOfWeek) {
+                    $this->addSlotsForSchedule($doctor, $currentDate, $schedule, $slots);
+                }
+                $currentDate->addDay();
+            }
+        }
+
+        // Delete existing future slots
+        TimeSlot::where('doctor_id', $doctor->id)
+            ->where('date', '>=', $now->format('Y-m-d'))
+            ->delete();
+
+        // Insert new slots in batches
+        if (!empty($slots)) {
+            TimeSlot::insert($slots);
+        }
+
+        return count($slots);
+    }
+
+    protected function addSlotsForSchedule(Doctor $doctor, Carbon $date, $schedule, &$slots)
+    {
+        $slotDuration = $doctor->slot_duration ?? 30;
+        $start = Carbon::parse($schedule->start_time);
+        $end = Carbon::parse($schedule->end_time);
+
+        $current = $start->copy();
+
+        while ($current->addMinutes($slotDuration) <= $end) {
+            $slots[] = [
+                'doctor_id' => $doctor->id,
+                'date' => $date->format('Y-m-d'),
+                'start_time' => $current->copy()->subMinutes($slotDuration)->format('H:i:s'),
+                'end_time' => $current->format('H:i:s'),
+                'is_booked' => false,
+                'created_at' => now(),
+                'updated_at' => now()
+            ];
+        }
+    }
+}
