@@ -62,10 +62,6 @@ class AppointmentController extends Controller
         ->where('status', 'absent')
         ->count();
 
-
-        $absentCount = Appointment::where('patient_id', $patient->id)
-        ->where('status', 'absent')
-        ->count();
     if ($absentCount >= 3) {
         return response()->json([
             'error' => 'account_blocked',
@@ -165,28 +161,17 @@ $status = 'confirmed'; // Default status
                     ], 400);
                 }
 
-if ($validated['method'] === 'wallet') {
-    // Verify wallet is activated
-    if (!$patient->wallet_activated_at) {
-        return response()->json([
-            'success' => false,
-            'error_code' => 'wallet_not_activated',
-            'message' => 'Please activate your wallet before making payments',
-        ], 400);
+        if ($validated['method'] === 'cash') {
+        Payment::create([
+            'appointment_id' => $appointment->id,
+            'patient_id' => $patient->id,
+            'amount' => $doctor->consultation_fee,
+            'method' => 'cash',
+            'status' => 'pending',
+            'paid_at' => null
+        ]);
     }
-
-
-
-    if ($validated['method'] === 'cash') {
-    Payment::create([
-        'appointment_id' => $appointment->id,
-        'patient_id' => $patient->id,
-        'amount' => $doctor->consultation_fee,
-        'method' => 'cash',
-        'status' => 'pending',
-        'paid_at' => null
-    ]);
-}
+    
     // Verify PIN
     if (!Hash::check($validated['wallet_pin'], $patient->wallet_pin)) {
         return response()->json([
@@ -210,11 +195,11 @@ if ($validated['method'] === 'wallet') {
 }
 
 
-                $paymentResult = $this->processWalletPayment($patient, $doctor->consultation_fee, $appointment);
-                if ($paymentResult !== true) {
-                    return $paymentResult; // Return error response if payment failed
-                }
-            }
+            //     $paymentResult = $this->processWalletPayment($patient, $doctor->consultation_fee, $appointment);
+            //     if ($paymentResult !== true) {
+            //         return $paymentResult; // Return error response if payment failed
+            //     }
+            // }
 
 
 
