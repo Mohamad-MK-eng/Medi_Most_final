@@ -1222,9 +1222,9 @@ public function editClinic(Request $request, $clinic_id)
     // استخدام التابع uploadIcon من المودل لمعالجة الصورة
     if ($request->hasFile('image')) {
         $clinic->uploadIcon($request->file('image'));
-    } 
-        
-    
+    }
+
+
 
     $clinic->update([
         'name' => $attr['name'],
@@ -1284,7 +1284,7 @@ public function allClinics(Request $request){
 public function gitClinicById($clinic_id)
 {
     $clinic = Clinic::find($clinic_id);
-    
+
     if (!$clinic) {
         return response()->json(['message' => 'Clinic is not found'], 404);
     }
@@ -1415,14 +1415,14 @@ public function addPatient(Request $request)
             'first_name' => $request->first_name,
             'last_name' => $request->last_name,
             'email' => $request->email,
-            'phone' => $request->phone_number, 
+            'phone' => $request->phone_number,
             'password' => Hash::make($request->password),
             'address' => $request->address,
             'gender' => $request->gender,
-            'role_id' => 4, 
+            'role_id' => 4,
         ]);
 
-        
+
         $patient = Patient::create([
             'user_id' => $user->id,
             'phone_number' => $request->phone_number,
@@ -1839,7 +1839,7 @@ public function updateSecretary(Request $request, $id)
         'last_name'        => 'nullable|string|max:255',
         'email'            => 'nullable|email|unique:users,email,' . $user->id,
         'workdays'         => 'nullable|string',
-        
+
         'profile_picture'  => 'nullable|image|mimes:jpeg,png,jpg,gif|max:4096'
     ]);
 
@@ -1847,11 +1847,11 @@ public function updateSecretary(Request $request, $id)
     if (isset($validated['first_name'])) {
         $user->first_name = $validated['first_name'];
     }
-    
+
     if (isset($validated['last_name'])) {
         $user->last_name = $validated['last_name'];
     }
-    
+
     if (isset($validated['email'])) {
         $user->email = $validated['email'];
     }
@@ -1861,7 +1861,7 @@ public function updateSecretary(Request $request, $id)
         $uploaded = $user->uploadFile($request->file('profile_picture'), 'profile_picture');
         if (!$uploaded) {
             return response()->json([
-                'success' => false, 
+                'success' => false,
                 'message' => 'Failed to upload profile picture'
             ], 500);
         }
@@ -1874,11 +1874,11 @@ public function updateSecretary(Request $request, $id)
     if (isset($validated['workdays'])) {
         $secretary->workdays = $validated['workdays'];
     }
-    
+
     $secretary->save();
 
     return response()->json([
-        'success' => true, 
+        'success' => true,
         'message' => 'Information Updated Successfully',
         'secretary' => $secretary->load('user') // إرجاع البيانات مع العلاقة
     ]);
@@ -1897,7 +1897,7 @@ public function deleteSecretary($secretary)
         }
 
         // حذف السكرتارية (سوف يحذف User تلقائياً بسبب onDelete('cascade'))
-       
+
         return DB::transaction(function () use ($secretary) {
             // Archive or soft delete if implemented
             if (method_exists($secretary, 'trashed')) {
@@ -1983,14 +1983,14 @@ public function updateAdminInfo(Request $request)
 
     // Handle image upload
     if ($request->hasFile('profile_picture'))
-    {  
+    {
             // Upload the file using the HandlesFiles trait
             $uploaded = $user->uploadFile($request->file('profile_picture'), 'profile_picture');
             if (!$uploaded) {
                 throw new \Exception('Failed to upload profile picture');
             }
     }
-    
+
     try {
         $user->update([
             'first_name'       => $validated['first_name'] ?? $user->first_name,
@@ -2310,13 +2310,12 @@ public function bookAppointment(Request $request)
 
 
 
-
-
-public function getAppointments(Request $request){
+public function getAppointments(Request $request)
+{
     // Verify secretary
-    // if (!Auth::user()->secretary) {
-    //     return response()->json(['message' => 'Unauthorized'], 403);
-    // }
+    if (!Auth::user()->secretary) {
+        return response()->json(['message' => 'Unauthorized'], 403);
+    }
 
     $type = $request->query('type', 'upcoming');
     $perPage = $request->query('per_page', 10);
@@ -2373,6 +2372,7 @@ public function getAppointments(Request $request){
         ]
     ]);
 }
+
 
 public function secretaryBookAppointment(Request $request)
     {
@@ -2469,12 +2469,25 @@ public function secretaryBookAppointment(Request $request)
 
             $slot->update(['is_booked' => true]);
 
-            $paymentResult = $this->processAppointmentPayment(
-                $appointment,
-                $patient,
-                $request->payment_method,
-                $secretary->id
-            );
+          $paymentResult = $this->processAppointmentPayment(
+    $appointment,
+    $patient,
+    $request->payment_method,
+    $secretary->id
+);
+
+// Update appointment status based on payment method
+if ($request->payment_method === 'wallet') {
+    $appointment->update([
+        'status' => 'paid',
+        'payment_status' => 'paid'
+    ]);
+} else {
+    $appointment->update([
+        'status' => 'confirmed',
+        'payment_status' => 'pending'
+    ]);
+}
 
             DB::commit();
 
@@ -2495,60 +2508,72 @@ public function secretaryBookAppointment(Request $request)
     }
 
 protected function processAppointmentPayment($appointment, $patient, $paymentMethod, $secretaryId)
-    {
-        $medicalCenterWallet = MedicalCenterWallet::firstOrCreate([], ['balance' => 0]);
+{
+    $medicalCenterWallet = MedicalCenterWallet::firstOrCreate([], ['balance' => 0]);
 
-        if ($paymentMethod === 'wallet') {
-            if (!$patient->wallet_activated_at) {
-                throw new \Exception('Patient wallet is not activated');
-            }
-
-            if ($patient->wallet_balance < $appointment->price) {
-                throw new \Exception('Insufficient wallet balance');
-            }
-
-            $patient->decrement('wallet_balance', $appointment->price);
-
-            WalletTransaction::create([
-                'patient_id' => $patient->id,
-                'amount' => $appointment->price,
-                'type' => 'payment',
-                'reference' => 'APT-' . $appointment->id,
-                'balance_before' => $patient->wallet_balance + $appointment->price,
-                'balance_after' => $patient->wallet_balance,
-                'notes' => 'Payment for appointment #' . $appointment->id
-            ]);
+    if ($paymentMethod === 'wallet') {
+        if (!$patient->wallet_activated_at) {
+            throw new \Exception('Patient wallet is not activated');
         }
 
-        $medicalCenterWallet->increment('balance', $appointment->price);
+        if ($patient->wallet_balance < $appointment->price) {
+            throw new \Exception('Insufficient wallet balance');
+        }
 
-        MedicalCenterWalletTransaction::create([
-            'medical_wallet_id' => $medicalCenterWallet->id,
-            'clinic_id' => $appointment->clinic_id,
+        $patient->decrement('wallet_balance', $appointment->price);
+
+        WalletTransaction::create([
+            'patient_id' => $patient->id,
             'amount' => $appointment->price,
             'type' => 'payment',
             'reference' => 'APT-' . $appointment->id,
-            'balance_before' => $medicalCenterWallet->balance - $appointment->price,
-            'balance_after' => $medicalCenterWallet->balance,
-            'notes' => 'Payment (' . $paymentMethod . ') for appointment #' . $appointment->id
+            'balance_before' => $patient->wallet_balance + $appointment->price,
+            'balance_after' => $patient->wallet_balance,
+            'notes' => 'Payment for appointment #' . $appointment->id
         ]);
 
-        $payment = Payment::create([
-            'appointment_id' => $appointment->id,
-            'patient_id' => $patient->id,
-            'amount' => $appointment->price,
-            'method' => $paymentMethod,
+        // UPDATE APPOINTMENT STATUS FOR WALLET PAYMENTS
+        $appointment->update([
             'status' => 'paid',
-            'secretary_id' => $secretaryId,
-            'medical_center_wallet' => true,
-            'transaction_id' => $paymentMethod === 'wallet'
-                ? 'WALLET-' . $appointment->id
-                : strtoupper($paymentMethod) . '-' . $appointment->id,
-            'paid_at' => now()
+            'payment_status' => 'paid'
         ]);
-
-        return $payment;
+    } else {
+        // For non-wallet payments, update status accordingly
+        $appointment->update([
+            'status' => 'confirmed',
+            'payment_status' => 'pending'
+        ]);
     }
+
+    $medicalCenterWallet->increment('balance', $appointment->price);
+
+    MedicalCenterWalletTransaction::create([
+        'medical_wallet_id' => $medicalCenterWallet->id,
+        'clinic_id' => $appointment->clinic_id,
+        'amount' => $appointment->price,
+        'type' => 'payment',
+        'reference' => 'APT-' . $appointment->id,
+        'balance_before' => $medicalCenterWallet->balance - $appointment->price,
+        'balance_after' => $medicalCenterWallet->balance,
+        'notes' => 'Payment (' . $paymentMethod . ') for appointment #' . $appointment->id
+    ]);
+
+    $payment = Payment::create([
+        'appointment_id' => $appointment->id,
+        'patient_id' => $patient->id,
+        'amount' => $appointment->price,
+        'method' => $paymentMethod,
+        'status' => 'paid',
+        'secretary_id' => $secretaryId,
+        'medical_center_wallet' => true,
+        'transaction_id' => $paymentMethod === 'wallet'
+            ? 'WALLET-' . $appointment->id
+            : strtoupper($paymentMethod) . '-' . $appointment->id,
+        'paid_at' => now()
+    ]);
+
+    return $payment;
+}
 
 
 

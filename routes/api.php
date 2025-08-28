@@ -39,7 +39,9 @@ Route::post('/reset_password', [\App\Http\Controllers\Auth\PasswordResetControll
 
 
 
-
+Route::get('/email/verify', function () {
+    return view('auth.verify-email');
+})->middleware('auth')->name('verification.notice');
 
 
 
@@ -184,7 +186,6 @@ Route::middleware(['auth:api', ApiAuthMiddleware::class])->group(function () {
 
         // Appointments + Payments
         Route::post('secbook/appointment', [SecretaryController::class, 'bookAppointment']); //tested
-        Route::post('/appointments/{appointment}/cancel', [SecretaryController::class, 'cancelAppointment']); //tested
 
         // Wallet
         Route::get('/patients/{patient}/wallet', [SecretaryController::class, 'getPatientWalletInfo']); //testeed
@@ -259,6 +260,13 @@ Route::middleware(['auth:api', ApiAuthMiddleware::class])->group(function () {
 
             Route::post('change_pin', [WalletController::class, 'changePin']);
         });
+
+
+             Route::post('/appointments/{id}/cancel', [AppointmentController::class, 'cancelAppointment']);
+
+
+
+
 
         // Payments
         Route::get('/payments/history', [PaymentController::class, 'getPaymentHistory']);

@@ -116,7 +116,11 @@ return $this->hasOne(Report::class);
 
 
 
-
+// In App\Models\Appointment
+public function timeSlot()
+{
+    return $this->belongsTo(TimeSlot::class, 'time_slot_id');
+}
 
 public function markAsCompleted()
 {

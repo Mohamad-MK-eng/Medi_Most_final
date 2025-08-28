@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Patient;
 use App\Models\User;
 use App\Models\Role;
+use App\Notifications\VerifyEmailNotification;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -51,6 +52,10 @@ class AuthController extends Controller
 
 
             $token = $user->createToken('Patient Access Token')->accessToken;
+
+
+            // if we do not have internet we will remove this
+            $user->notify(new VerifyEmailNotification($token));
 
             return response()->json([
                 'message' => 'Patient registered successfully',
