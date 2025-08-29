@@ -47,14 +47,21 @@ class AppointmentController extends Controller
 
            $doctorExists = Doctor::withTrashed()->where('id', $request->doctor_id)->exists();
 
+           
+
     if (!$doctorExists) {
         return response()->json([
             'error' => 'doctor_not_found',
             'message' => 'The selected doctor is not available for appointments'
         ], 422);
     }
+        $doctorforStatus = Doctor::findOrfail($request['doctor_id']);
 
-
+               if (!$doctorforStatus->is_active) {
+                      return response()->json([
+                         'message' => 'Doctor is not available at the moment'
+                      ], 403); 
+                          }
 
 
 
@@ -217,6 +224,7 @@ $status = 'confirmed'; // Default status
 
         'doctor' => $doctor->user->first_name.' '.$doctor->user->last_name,
         'date' => $appointment->appointment_date->format('D d F Y'),
+        'time' => $appointment->appointment_date->format('h:i A'),  
         'note' => 'Stay tuned for any updates'
     ]
 ]);
@@ -617,6 +625,7 @@ public function getAppointments(Request $request)
         ->with([
             'doctor.user:id,first_name,last_name,profile_picture',
             'clinic:id,name',
+            'timeSlot:id,date,start_time,end_time',
             'payments' => function($query) {
                 $query->whereIn('status', ['completed', 'paid']);
             }
@@ -628,23 +637,31 @@ public function getAppointments(Request $request)
             ->where('appointment_date', '>=', $nowLocal)
             ->get()
             ->map(function ($appointment) {
-                // Determine payment status
                 $paymentStatus = $appointment->payments->isNotEmpty()
                     ? 'paid'
                     : 'pending';
 
                 $doctorUser = $appointment->doctor->user;
                 $profilePictureUrl = $doctorUser ? $doctorUser->getFileUrl('profile_picture') : null;
-                $localTime = Carbon::parse($appointment->appointment_date)
-                    ->setTimezone('Asia/Damascus');
+                
+                $datePart = Carbon::parse($appointment->appointment_date)->format('Y-m-d');
+                
+                if ($appointment->timeSlot) {
+                    $startTime = Carbon::parse($appointment->timeSlot->start_time)->format('h:i A');
+                    
+                    $formattedDateTime = $datePart . '_' . $startTime;
+                } else {
+                    $formattedDateTime = Carbon::parse($appointment->appointment_date)
+                        ->format('Y-m-d h:i A');
+                }
 
                 return [
                     'id' => $appointment->id,
-                    'date' => $localTime->format('Y-m-d h:i A'),
+                    'date' => $formattedDateTime,
                     'doctor_id' => $appointment->doctor->id,
-                    'first_name' =>  $appointment->doctor->user->first_name ,
-                     'last_name' =>   $appointment->doctor->user->last_name,
-                     'specialty' =>  $appointment->doctor->specialty,
+                    'first_name' => $appointment->doctor->user->first_name,
+                    'last_name' => $appointment->doctor->user->last_name,
+                    'specialty' => $appointment->doctor->specialty,
                     'profile_picture_url' => $profilePictureUrl,
                     'clinic_name' => $appointment->clinic->name,
                     'type' => $paymentStatus,
@@ -655,14 +672,12 @@ public function getAppointments(Request $request)
         return response()->json(['data' => $appointments->values()]);
     }
     else if ($type === 'completed') {
-        // Get both explicitly completed and past appointments
         $completedAppointments = $query->where(function($q) use ($nowLocal) {
                 $q->where('status', 'completed')
                   ->orWhere('appointment_date', '<', $nowLocal);
             })
             ->paginate($perPage)
             ->through(function ($appointment) use ($nowLocal) {
-                // For appointments that are past but not marked completed
                 if ($appointment->status !== 'completed' &&
                     $appointment->appointment_date < $nowLocal) {
                     $appointment->update(['status' => 'completed']);
@@ -674,16 +689,25 @@ public function getAppointments(Request $request)
 
                 $doctorUser = $appointment->doctor->user;
                 $profilePictureUrl = $doctorUser ? $doctorUser->getFileUrl('profile_picture') : null;
-                $localTime = Carbon::parse($appointment->appointment_date)
-                    ->setTimezone('Asia/Damascus');
+                
+                $datePart = Carbon::parse($appointment->appointment_date)->format('Y-m-d');
+                
+                if ($appointment->timeSlot) {
+                    $startTime = Carbon::parse($appointment->timeSlot->start_time)->format('h:i A');
+                    
+                    $formattedDateTime = $datePart . '_' . $startTime;
+                } else {
+                    $formattedDateTime = Carbon::parse($appointment->appointment_date)
+                        ->format('Y-m-d h:i A');
+                }
 
                 return [
                     'id' => $appointment->id,
-                    'date' => $localTime->format('Y-m-d h:i A'),
+                    'date' => $formattedDateTime,
                     'doctor_id' => $appointment->doctor->id,
-                    'first_name' =>  $appointment->doctor->user->first_name ,
-                     'last_name' =>   $appointment->doctor->user->last_name,
-                     'specialty' =>  $appointment->doctor->specialty,
+                    'first_name' => $appointment->doctor->user->first_name,
+                    'last_name' => $appointment->doctor->user->last_name,
+                    'specialty' => $appointment->doctor->specialty,
                     'profile_picture_url' => $profilePictureUrl,
                     'clinic_name' => $appointment->clinic->name,
                     'type' => $paymentStatus,
@@ -701,8 +725,8 @@ public function getAppointments(Request $request)
             ],
         ]);
     }
- else if ($type === 'absent') {
-        // Get only absent appointments
+    else if ($type === 'absent') {
+        // الحصول على المواعيد الغائبة فقط
         $absentAppointments = $query->where('status', 'absent')
             ->paginate($perPage)
             ->through(function ($appointment) {
@@ -712,12 +736,21 @@ public function getAppointments(Request $request)
 
                 $doctorUser = $appointment->doctor->user;
                 $profilePictureUrl = $doctorUser ? $doctorUser->getFileUrl('profile_picture') : null;
-                $localTime = Carbon::parse($appointment->appointment_date)
-                    ->setTimezone('Asia/Damascus');
+                
+                $datePart = Carbon::parse($appointment->appointment_date)->format('Y-m-d');
+                
+                if ($appointment->timeSlot) {
+                    $startTime = Carbon::parse($appointment->timeSlot->start_time)->format('h:i A');
+                    
+                    $formattedDateTime = $datePart . '_' . $startTime;
+                } else {
+                    $formattedDateTime = Carbon::parse($appointment->appointment_date)
+                        ->format('Y-m-d h:i A');
+                }
 
                 return [
                     'id' => $appointment->id,
-                    'date' => $localTime->format('Y-m-d h:i A'),
+                    'date' => $formattedDateTime,
                     'doctor_id' => $appointment->doctor->id,
                     'first_name' => $appointment->doctor->user->first_name,
                     'last_name' => $appointment->doctor->user->last_name,
@@ -727,7 +760,7 @@ public function getAppointments(Request $request)
                     'type' => $paymentStatus,
                     'price' => $appointment->price,
                     'status' => $appointment->status,
-                    'is_absent' => true // Additional flag for frontend
+                    'is_absent' => true
                 ];
             });
 
@@ -746,15 +779,27 @@ public function getAppointments(Request $request)
 }
 
 
- public function updateAppointment(Request $request, $id)
+public function updateAppointment(Request $request, $id)
 {
+    DB::beginTransaction();
+    
     try {
         $patient = Auth::user()->patient;
         if (!$patient) {
             return response()->json(['message' => 'Patient profile not found'], 404);
         }
+         $doctorforStatus = Doctor::findOrfail($request['doctor_id']);
+
+               if (!$doctorforStatus->is_active) {
+                      return response()->json([
+                         'message' => 'Doctor is not available at the moment'
+                      ], 403); 
+                          }
 
         $appointment = $patient->appointments()->findOrFail($id);
+        
+        // حفظ الـ time_slot القديم قبل التعديل
+        $oldTimeSlotId = $appointment->time_slot_id;
 
         $validated = $request->validate([
             'doctor_id' => 'sometimes|exists:doctors,id',
@@ -765,12 +810,33 @@ public function getAppointments(Request $request)
             'time_slot_id.exists' => 'The selected time slot does not exist'
         ]);
 
-        if (isset($validated['doctor_id'])) {
-            $appointment->doctor_id = $validated['doctor_id'];
+        // إذا تم تغيير الـ time_slot
+        if (isset($validated['time_slot_id'])) {
+            $newTimeSlotId = $validated['time_slot_id'];
+            
+            // 1. التحقق من أن الـ time_slot الجديد متاح
+            $newTimeSlot = TimeSlot::findOrFail($newTimeSlotId);
+            if ($newTimeSlot->is_booked && $newTimeSlot->id != $oldTimeSlotId) {
+                return response()->json([
+                    'message' => 'The selected time slot is already booked'
+                ], 400);
+            }
+            
+            // 2. تحرير الـ time_slot القديم
+            if ($oldTimeSlotId) {
+                TimeSlot::where('id', $oldTimeSlotId)->update(['is_booked' => false]);
+            }
+            
+            // 3. حجز الـ time_slot الجديد
+            $newTimeSlot->update(['is_booked' => true]);
+            
+            // 4. تحديث تاريخ ووقت الموعد بناءً على الـ time_slot الجديد
+            $appointment->appointment_date = $newTimeSlot->date;
+            $appointment->time_slot_id = $newTimeSlotId;
         }
 
-        if (isset($validated['time_slot_id'])) {
-            $appointment->time_slot_id = $validated['time_slot_id'];
+        if (isset($validated['doctor_id'])) {
+            $appointment->doctor_id = $validated['doctor_id'];
         }
 
         if (array_key_exists('reason', $validated)) {
@@ -778,26 +844,42 @@ public function getAppointments(Request $request)
         }
 
         if (!$appointment->save()) {
+            DB::rollBack();
             return response()->json(['message' => 'Failed to save changes'], 500);
         }
 
         // تحديث البيانات من القاعدة
         $appointment->refresh();
+        $appointment->load('timeSlot'); // تأكد من تحميل العلاقة
 
         // ✅ جلب معلومات الدكتور بعد الحفظ
         $doctor = $appointment->doctor()->with('clinic', 'user')->first();
+
+        DB::commit();
 
         return response()->json([
             'success' => true,
             'message' => 'Operation Done Successfully',
             'appointment_details' => [
                 'clinic' => $doctor->clinic->name ?? 'Unknown Clinic',
-                'doctor' =>$doctor->user->first_name.' '.$doctor->user->last_name ?? 'Unknown Doctor',
+                'doctor' => $doctor->user->first_name.' '.$doctor->user->last_name ?? 'Unknown Doctor',
                 'date' => $appointment->appointment_date->format('D d F Y'),
+                'time' => $appointment->timeSlot ? 
+                    Carbon::parse($appointment->timeSlot->start_time)->format('h:i A') 
+                    : 'Unknown Time',
                 'note' => 'Stay tuned for any updates'
             ]
         ]);
+        
+    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        DB::rollBack();
+        return response()->json([
+            'message' => 'Appointment or related data not found',
+            'error' => $e->getMessage()
+        ], 404);
+        
     } catch (\Exception $e) {
+        DB::rollBack();
         return response()->json([
             'message' => 'Update failed',
             'error' => $e->getMessage()

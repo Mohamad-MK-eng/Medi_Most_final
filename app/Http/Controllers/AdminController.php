@@ -1564,9 +1564,9 @@ public function updatePatient(Request $request, $id)
     $limit = $request->get('limit', 5);
 
     $doctors = Doctor::with([
-        'user',     // معلومات المستخدم
-        'clinic',   // معلومات العيادة
-        'salary'    // معلومات الراتب (إذا عندك علاقة salary)
+        'user',     
+        'clinic',   
+        'salary'    
     ])->paginate($limit);
 
     if ($doctors->isEmpty()) {
@@ -1577,6 +1577,7 @@ public function updatePatient(Request $request, $id)
             // استبدال profile_picture بالرابط الكامل
             $doctors->user->profile_picture = $doctors->user->getProfilePictureUrl();
         }
+    $doctors->is_active = $doctors->is_active? 'Available' : 'Not Available' ;
         return $doctors;
     });
 
@@ -1645,37 +1646,44 @@ public function deleteDoctorA($doctor_id)
     });
 }
 public function searchDoctorsA(Request $request)
-    {
-        $query = Doctor::with(['user', 'clinic', 'reviews', 'salary']); // تأكد من جلب كل العلاقات المطلوبة
+{
+    $query = Doctor::with(['user', 'clinic', 'reviews', 'salary']);
 
-        if ($request->filled('keyword')) {
-            $keyword = $request->keyword;
+    if ($request->filled('keyword')) {
+        $keyword = $request->keyword;
 
-            $query->where(function ($q) use ($keyword) {
-                $q->whereHas('user', function ($uq) use ($keyword) {
-                    $uq->where('first_name', 'like', "%$keyword%")
-                        ->orWhere('last_name', 'like', "%$keyword%");
-                })
-                    ->orWhere('specialty', 'like', "%$keyword%")
-                    ->orWhereHas('clinic', function ($cq) use ($keyword) {
-                        $cq->where('name', 'like', "%$keyword%");
-                    });
+        $query->where(function ($q) use ($keyword) {
+            $q->whereHas('user', function ($uq) use ($keyword) {
+                $uq->where('first_name', 'like', "%$keyword%")
+                    ->orWhere('last_name', 'like', "%$keyword%");
+            })
+            ->orWhere('specialty', 'like', "%$keyword%")
+            ->orWhereHas('clinic', function ($cq) use ($keyword) {
+                $cq->where('name', 'like', "%$keyword%");
             });
-        } else {
-            // من الأفضل إرجاع مصفوفة فارغة بدلاً من خطأ إذا لم يتم توفير كلمة بحث
-            return response()->json([], 200);
-        }
-
-        $results = $query->get();
-
-        if ($results->isEmpty()) {
-            // أرجع مصفوفة فارغة إذا لم يتم العثور على نتائج
-            return response()->json([], 404);
-        }
-
-        // أرجع النتائج مباشرة بنفس هيكل allDoctors
-        return response()->json($results, 200);
+        });
+    } else {
+        return response()->json([], 200);
     }
+
+    $results = $query->get();
+
+    $results->transform(function ($doctor) {
+        if ($doctor->user && method_exists($doctor->user, 'getProfilePictureUrl')) {
+            // استبدال profile_picture بالرابط الكامل
+            $doctor->user->profile_picture = $doctor->user->getProfilePictureUrl();
+        }
+            $doctor->is_active = $doctor->is_active? 'Available' : 'Not Available' ;
+
+        return $doctor;
+    });
+
+    if ($results->isEmpty()) {
+        return response()->json([], 404);
+    }
+
+    return response()->json($results, 200); 
+}
 
 
 
@@ -2321,16 +2329,22 @@ public function getAppointments(Request $request)
     $perPage = $request->query('per_page', 10);
     $clinicId = $request->query('clinic_id');
     $doctorId = $request->query('doctor_id');
+    
+    date_default_timezone_set('Asia/Damascus');
+    $nowLocal = Carbon::now('Asia/Damascus');
 
     $query = Appointment::with([
         'patient.user:id,first_name,last_name',
+        'payments' => function($query) {
+                $query->whereIn('status', ['completed', 'paid']);
+            },
         'doctor' => function($query) {
             $query->withTrashed()->with(['user' => function($q) {
                 $q->withTrashed()->select('id', 'first_name', 'last_name');
             }]);
         },
         'clinic:id,name',
-        'payments'
+      
     ]);
 
     // Apply filters
@@ -2345,7 +2359,7 @@ public function getAppointments(Request $request)
     switch ($type) {
         case 'upcoming':
             $query->where('status', 'confirmed')
-                ->where('appointment_date', '>=', now());
+                  ->where('appointment_date', '>=', $nowLocal);
             break;
         case 'completed':
             $query->where('status', 'completed');
@@ -2363,22 +2377,41 @@ public function getAppointments(Request $request)
     $appointments = $query->orderBy('appointment_date', 'desc')
         ->paginate($perPage);
 
+    // إضافة حقل payment_status فقط مع الحفاظ على الهيكل الأصلي
+    $appointments->getCollection()->transform(function ($appointment) {
+        $paymentStatus = $appointment->payments->isNotEmpty() 
+            ? 'paid' 
+            : 'pending';
+        
+        // إضافة حقل payment_status إلى الكائن الأصلي
+        $appointment->status = $paymentStatus;
+        
+        return $appointment;
+    });
+
     return response()->json([
         'data' => $appointments->items(),
         'meta' => [
             'current_page' => $appointments->currentPage(),
             'per_page' => $appointments->perPage(),
             'total' => $appointments->total(),
+            'last_page' => $appointments->lastPage(),
         ]
     ]);
 }
-
 
 public function secretaryBookAppointment(Request $request)
     {
         if (!Auth::user()->secretary) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+         $doctorforStatus = Doctor::findOrfail($request['doctor_id']);
+
+        if (!$doctorforStatus->is_active) {
+           return response()->json([
+              'message' => 'Doctor is not available at the moment'
+                  ], 403); 
+              }
 
         $validator = Validator::make($request->all(), [
             'patient_id' => 'required_without:new_patient|exists:patients,id',

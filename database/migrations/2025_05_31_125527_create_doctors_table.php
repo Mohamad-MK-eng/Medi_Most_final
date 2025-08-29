@@ -24,6 +24,7 @@ return new class extends Migration
             $table->integer('experience_years')->default(2);
             $table->date('experience_start_date')->nullable()->default(DB::raw('CURRENT_DATE'));
             $table->softDeletes();
+            $table->boolean('is_active')->default(true)->nullable(false); 
 
 
             $table->timestamps();

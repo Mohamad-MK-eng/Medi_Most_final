@@ -64,7 +64,8 @@ public function getProfile()
                 'bio' => $doctor->bio ?? 'No bio available',
                 'profile_picture_url' => $user->getProfilePictureUrl(),
                 'clinic' => $doctor->clinic->name ,
-                'working_days' => $schedule
+                'working_days' => $schedule,
+                'is_active' => $doctor->is_active ? true : false
             ]
         ]);
 
@@ -1187,7 +1188,31 @@ public function getPatientReport($id)
         ], 500);
     }
 }
+public function updateActivityStatus()
+{
+    try{
+     $doctor = Auth::user()->doctor;
+      if (!$doctor) {
+        return response()->json(['message' => 'Doctor profile not found'], 404);
+    }
+    $doctor->is_active = !$doctor->is_active;
+    $doctor->save();
+    
+    return response()->json([
+        'succuss' => true ,
+        'message' => $doctor->is_active ? 'You are active now' : 'You are inactive now' ,
+        'is_active' => $doctor->is_active ? true : false ,
+    ],200) ;
+} catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => 'Failed to update Status',
+            'message' => $e->getMessage()
+        ], 500);
+    }
 
+
+}
 
 
 
