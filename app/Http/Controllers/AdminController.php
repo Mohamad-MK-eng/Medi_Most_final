@@ -875,6 +875,27 @@ class AdminController extends Controller
         if (!$clinic) {
             return response()->json(['message' => 'Clinic is not found'], 404);
         }
+/////////////////////////////////////////////////////////    doctors          ///////////////////////////////
+    public function allDoctors(Request $request){
+    $limit = $request->get('limit', 5);
+
+    $doctors = Doctor::with([
+        'user',
+        'clinic',
+        'salary'
+    ])->paginate($limit);
+
+    if ($doctors->isEmpty()) {
+        return response()->json(['message' => 'No doctors found'], 404);
+    }
+     $doctors->getCollection()->transform(function ($doctors) {
+        if ($doctors->user && method_exists($doctors->user, 'getProfilePictureUrl')) {
+            // استبدال profile_picture بالرابط الكامل
+            $doctors->user->profile_picture = $doctors->user->getProfilePictureUrl();
+        }
+    $doctors->is_active = $doctors->is_active? 'Available' : 'Not Available' ;
+        return $doctors;
+    });
 
         $clinicData = [
             'id' => $clinic->id,
@@ -1217,19 +1238,24 @@ class AdminController extends Controller
     public function searchDoctorsA(Request $request)
     {
         $query = Doctor::with(['user', 'clinic', 'reviews', 'salary']); // تأكد من جلب كل العلاقات المطلوبة
+    });
+}
+public function searchDoctorsA(Request $request)
+{
+    $query = Doctor::with(['user', 'clinic', 'reviews', 'salary']);
 
-        if ($request->filled('keyword')) {
-            $keyword = $request->keyword;
 
-            $query->where(function ($q) use ($keyword) {
-                $q->whereHas('user', function ($uq) use ($keyword) {
-                    $uq->where('first_name', 'like', "%$keyword%")
-                        ->orWhere('last_name', 'like', "%$keyword%");
-                })
-                    ->orWhere('specialty', 'like', "%$keyword%")
-                    ->orWhereHas('clinic', function ($cq) use ($keyword) {
-                        $cq->where('name', 'like', "%$keyword%");
-                    });
+    if ($request->filled('keyword')) {
+        $keyword = $request->keyword;
+
+        $query->where(function ($q) use ($keyword) {
+            $q->whereHas('user', function ($uq) use ($keyword) {
+                $uq->where('first_name', 'like', "%$keyword%")
+                    ->orWhere('last_name', 'like', "%$keyword%");
+            })
+            ->orWhere('specialty', 'like', "%$keyword%")
+            ->orWhereHas('clinic', function ($cq) use ($keyword) {
+                $cq->where('name', 'like', "%$keyword%");
             });
         } else {
             return response()->json([], 200);
@@ -1242,7 +1268,29 @@ class AdminController extends Controller
         }
 
         return response()->json($results, 200);
+        });
+    } else {
+        return response()->json([], 200);
     }
+
+    $results = $query->get();
+
+    $results->transform(function ($doctor) {
+        if ($doctor->user && method_exists($doctor->user, 'getProfilePictureUrl')) {
+            // استبدال profile_picture بالرابط الكامل
+            $doctor->user->profile_picture = $doctor->user->getProfilePictureUrl();
+        }
+            $doctor->is_active = $doctor->is_active? 'Available' : 'Not Available' ;
+
+        return $doctor;
+    });
+
+    if ($results->isEmpty()) {
+        return response()->json([], 404);
+    }
+
+    return response()->json($results, 200);
+}
 
 
 
@@ -1822,10 +1870,93 @@ class AdminController extends Controller
 
 
     public function secretaryBookAppointment(Request $request)
+    $type = $request->query('type', 'upcoming');
+    $perPage = $request->query('per_page', 10);
+    $clinicId = $request->query('clinic_id');
+    $doctorId = $request->query('doctor_id');
+
+    date_default_timezone_set('Asia/Damascus');
+    $nowLocal = Carbon::now('Asia/Damascus');
+
+    $query = Appointment::with([
+        'patient.user:id,first_name,last_name',
+        'payments' => function($query) {
+                $query->whereIn('status', ['completed', 'paid']);
+            },
+        'doctor' => function($query) {
+            $query->withTrashed()->with(['user' => function($q) {
+                $q->withTrashed()->select('id', 'first_name', 'last_name');
+            }]);
+        },
+        'clinic:id,name',
+
+    ]);
+
+    // Apply filters
+    if ($clinicId) {
+        $query->where('clinic_id', $clinicId);
+    }
+    if ($doctorId) {
+        $query->where('doctor_id', $doctorId);
+    }
+
+    // Filter by appointment type
+    switch ($type) {
+        case 'upcoming':
+            $query->where('status', 'confirmed')
+                  ->where('appointment_date', '>=', $nowLocal);
+            break;
+        case 'completed':
+            $query->where('status', 'completed');
+            break;
+        case 'cancelled':
+            $query->where('status', 'cancelled');
+            break;
+        case 'absent':
+            $query->where('status', 'absent');
+            break;
+        default:
+            return response()->json(['message' => 'Invalid appointment type'], 400);
+    }
+
+    $appointments = $query->orderBy('appointment_date', 'desc')
+        ->paginate($perPage);
+
+    // إضافة حقل payment_status فقط مع الحفاظ على الهيكل الأصلي
+    $appointments->getCollection()->transform(function ($appointment) {
+        $paymentStatus = $appointment->payments->isNotEmpty()
+            ? 'paid'
+            : 'pending';
+
+        // إضافة حقل payment_status إلى الكائن الأصلي
+        $appointment->status = $paymentStatus;
+
+        return $appointment;
+    });
+
+    return response()->json([
+        'data' => $appointments->items(),
+        'meta' => [
+            'current_page' => $appointments->currentPage(),
+            'per_page' => $appointments->perPage(),
+            'total' => $appointments->total(),
+            'last_page' => $appointments->lastPage(),
+        ]
+    ]);
+}
+
+public function secretaryBookAppointment(Request $request)
     {
         if (!Auth::user()->secretary) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+         $doctorforStatus = Doctor::findOrfail($request['doctor_id']);
+
+        if (!$doctorforStatus->is_active) {
+           return response()->json([
+              'message' => 'Doctor is not available at the moment'
+                  ], 403);
+              }
 
         $validator = Validator::make($request->all(), [
             'patient_id' => 'required_without:new_patient|exists:patients,id',
@@ -2272,4 +2403,4 @@ class AdminController extends Controller
             })
         ]);
     }
-}
+

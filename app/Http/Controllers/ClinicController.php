@@ -114,7 +114,7 @@ class ClinicController extends Controller
                 'profile_picture_url' => $user->getProfilePictureUrl(),
                 'rate' => (float)$doctor->rating,
                 // حلوة الفكرة
-                'is_active' => $user->is_active,
+                'is_active' => $doctor->is_active
                 /* 'schedules' => $doctor->schedules->map(function ($schedule) {
                     return [
                         'day' => $schedule->day,
@@ -189,6 +189,7 @@ class ClinicController extends Controller
             'bio' => $doctor->bio,
             'schedule' => $schedule,
             'review_count' => $doctor->reviews->count(),
+            'is_active' => $doctor->is_active? true : false,
 
             'method' => [
                 'cash' => true,

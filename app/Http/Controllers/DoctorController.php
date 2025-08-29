@@ -25,8 +25,9 @@ class DoctorController extends Controller
     public function getProfile()
     {
         try {
-            $user = Auth::user();
+            $user = Auth::user(); // Get authenticated user
 
+            // Check if user has a doctor profile
             if (!$user->doctor) {
                 return response()->json([
                     'error' => 'Doctor profile not found',
@@ -36,6 +37,7 @@ class DoctorController extends Controller
 
             $doctor = $user->doctor->load(['clinic', 'schedules', 'reviews']);
 
+            // Format working days
             $schedule = $doctor->schedules->map(function ($schedule) {
                 return [
                     'day' => ucfirst($schedule->day),
@@ -62,7 +64,8 @@ class DoctorController extends Controller
                     'bio' => $doctor->bio ?? 'No bio available',
                     'profile_picture_url' => $user->getProfilePictureUrl(),
                     'clinic' => $doctor->clinic->name,
-                    'working_days' => $schedule
+                    'working_days' => $schedule,
+                    'is_active' => $doctor->is_active ? true : false
                 ]
             ]);
         } catch (\Exception $e) {
@@ -148,21 +151,25 @@ class DoctorController extends Controller
 
         try {
             DB::transaction(function () use ($user, $doctor, $request, $validator) {
+                // Update phone number if provided
                 if ($request->has('phone_number')) {
                     $user->phone = $request->phone_number;
                     $user->save();
                 }
 
+                // Update address if provided (assuming address is stored in clinic)
                 if ($request->has('address') && $doctor->clinic) {
                     $user->address = $request->address;
                     $user->save();
                 }
 
+                // Update bio if provided
                 if ($request->has('bio')) {
                     $doctor->bio = $request->bio;
                     $doctor->save();
                 }
 
+                // Handle profile picture upload if provided
                 if ($request->hasFile('profile_picture')) {
                     $uploaded = $user->uploadFile($request->file('profile_picture'), 'profile_picture');
                     if (!$uploaded) {
@@ -171,9 +178,11 @@ class DoctorController extends Controller
                 }
             });
 
+            // Refresh the models to get updated data
             $user->refresh();
             $doctor->refresh();
 
+            // Format working days
             $schedule = $doctor->schedules->map(function ($schedule) {
                 return [
                     'day' => ucfirst($schedule->day),
@@ -308,10 +317,12 @@ class DoctorController extends Controller
             $dateInput = $validated['date'];
             $hasDateFilter = true;
 
+            // التحقق من صحة التاريخ باستخدام Carbon
             try {
                 $date = Carbon::parse($dateInput);
                 $selectedDate = $date->format('Y-m-d');
 
+                // الفلترة بناء على التاريخ الكامل (اليوم+الشهر+السنة)
                 $query->whereDate('appointment_date', $selectedDate);
             } catch (\Exception $e) {
                 return response()->json([
@@ -542,6 +553,7 @@ class DoctorController extends Controller
             return response()->json(['message' => 'Doctor profile not found'], 404);
         }
 
+        // Get doctor's basic information
         $doctorInfo = [
             'name' => $doctor->user->first_name . ' ' . $doctor->user->last_name,
             'specialty' => $doctor->specialty,
@@ -551,10 +563,12 @@ class DoctorController extends Controller
             'bio' => $doctor->bio ?? "Lorem ipsum is simply dummy text of the printing and typesetting industry...",
         ];
 
+        // Get all schedules ordered by day of week
         $schedules = $doctor->schedules()
             ->orderByRaw("FIELD(day, 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')")
             ->get();
 
+        // Format working days and hours
         $workingDays = $schedules->map(function ($schedule) {
             return [
                 'day' => ucfirst($schedule->day),
@@ -563,6 +577,7 @@ class DoctorController extends Controller
             ];
         });
 
+        // Create the formatted working hours string
         $daysAbbreviated = $workingDays->map(function ($day) {
             return substr($day['day'], 0, 3);
         })->implode('_');
@@ -615,13 +630,13 @@ class DoctorController extends Controller
         $topDoctors = Doctor::topRated()->get()->map(function ($doctor) {
             return [
                 'id' => $doctor->id,
-                'first_name' => $doctor->user->first_name,
+                'first_name' => $doctor->user->first_name, // Assuming name is in User model
                 'last_name' => $doctor->user->last_name,
                 'specialty' => $doctor->specialty,
 
                 'experience_years' => $doctor->experience_years,
                 'rate' => (float)$doctor->rating,
-                'profile_picture_url' => $doctor->user->getProfilePictureUrl(),
+                'profile_picture_url' => $doctor->user->getProfilePictureUrl(), // Assuming user has profile picture
             ];
         });
 
@@ -691,7 +706,7 @@ class DoctorController extends Controller
             ->where('id', $appointmentId)
             ->firstOrFail();
 
-
+        // Validate the request
         $validated = $request->validate([
             'title' => 'nullable|string|max:255',
             'content' => 'nullable|string|min:20',
@@ -703,12 +718,14 @@ class DoctorController extends Controller
         ]);
 
         return DB::transaction(function () use ($appointment, $validated) {
+            // Create the report
             $report = Report::create([
                 'appointment_id' => $appointment->id,
                 'title' => $validated['title'],
                 'content' => $validated['content']
             ]);
 
+            // Add prescriptions
             foreach ($validated['prescriptions'] as $prescriptionData) {
                 Prescription::create([
                     'report_id' => $report->id,
@@ -721,24 +738,26 @@ class DoctorController extends Controller
                 ]);
             }
 
+            // Mark appointment as completed
             $appointment->update(['status' => 'completed']);
 
+            // Format the response to exactly match your interface
             return response()->json([
                 'success' => true,
                 'message' => 'Medical report submitted successfully',
                 'report' => [
-                    'date' => $appointment->appointment_date->format('Y-m-d h:i A'),
-                    'clinic' => $appointment->clinic->name,
-                    'doctor' => $appointment->doctor->user->name,
-                    'specialty' => $appointment->doctor->specialty,
-                    'title' => $report->title,
-                    'content' => $report->content,
+                    'date' => $appointment->appointment_date->format('Y-m-d h:i A'), // "2025-08-01 09:00 AM" format
+                    'clinic' => $appointment->clinic->name, // "Oncology"
+                    'doctor' => $appointment->doctor->user->name, // "John White" or null if not set
+                    'specialty' => $appointment->doctor->specialty, // "Cardiology"
+                    'title' => $report->title, // "Annual Checkup Report"
+                    'content' => $report->content, // Patient health details
                     'prescriptions' => $report->prescriptions->map(function ($prescription) {
                         return [
-                            'medication' => $prescription->medication,
-                            'dosage' => $prescription->dosage,
-                            'frequency' => $prescription->frequency,
-                            'instructions' => $prescription->instructions,
+                            'medication' => $prescription->medication, // "Paracetamol"
+                            'dosage' => $prescription->dosage, // "500mg"
+                            'frequency' => $prescription->frequency, // "3x/day"
+                            'instructions' => $prescription->instructions, // "After meal"
                         ];
                     })->toArray()
                 ]
@@ -755,13 +774,16 @@ class DoctorController extends Controller
 
 
 
+    // In your AppointmentController or similar
 
     public function markAsAbsent(Appointment $appointment)
     {
+        // Verify the authenticated user is the doctor for this appointment
         if (Auth::user()->doctor->id !== $appointment->doctor_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        // Check if appointment can be marked as absent
         if (!in_array($appointment->status, ['pending', 'confirmed'])) {
             return response()->json(['message' => 'Appointment cannot be marked as absent in its current state'], 400);
         }
@@ -775,6 +797,7 @@ class DoctorController extends Controller
                 $patient = $appointment->patient;
                 $absentCount = $patient->appointments()->where('status', 'absent')->count();
 
+                // Notify patient if they're approaching the limit
                 if ($absentCount >= 2) {
                     $remaining = 3 - $absentCount;
                     $message = $remaining > 0
@@ -797,10 +820,12 @@ class DoctorController extends Controller
 
     public function markAsCompleted(Appointment $appointment)
     {
+        // Verify the authenticated user is the doctor for this appointment
         if (Auth::user()->doctor->id !== $appointment->doctor_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        // Check if appointment can be marked as completed
         if (!in_array($appointment->status, ['confirmed'])) {
             return response()->json([
                 'message' => 'Only confirmed appointments can be marked as completed'
@@ -915,6 +940,7 @@ class DoctorController extends Controller
                 return response()->json(['message' => 'Doctor profile not found'], 404);
             }
 
+            // Verify the patient has had appointments with this doctor
             $hasAppointments = Appointment::where('doctor_id', $doctor->id)
                 ->where('patient_id', $patientId)
                 ->exists();
@@ -925,11 +951,14 @@ class DoctorController extends Controller
                 ], 404);
             }
 
+            // Get the patient details
             $patient = Patient::with('user')->findOrFail($patientId);
 
+            // Get year and month from request parameters or use current
             $year = request()->has('year') ? request('year') : Carbon::now()->year;
             $month = request()->has('month') ? request('month') : Carbon::now()->month;
 
+            // Get all reports for this patient with this doctor filtered by year and month
             $reports = Report::select('reports.id', 'reports.title', 'appointments.appointment_date')
                 ->join('appointments', 'appointments.id', '=', 'reports.appointment_id')
                 ->where('appointments.doctor_id', $doctor->id)
@@ -939,6 +968,7 @@ class DoctorController extends Controller
                 ->orderBy('appointments.appointment_date', 'desc')
                 ->get();
 
+            // Check if reports are empty
             if ($reports->isEmpty()) {
                 return response()->json([
                     'message' => 'No records found for the selected year and month',
@@ -949,6 +979,7 @@ class DoctorController extends Controller
                 ], 404);
             }
 
+            // Format the reports data
             $formattedReports = $reports->map(function ($report) {
                 $appointmentDate = Carbon::parse($report->appointment_date);
 
@@ -1110,12 +1141,13 @@ class DoctorController extends Controller
                 ], 400);
             }
 
+            // تنسيق الرد مع report map - التصحيح هنا
             return response()->json([
                 'success' => true,
                 'requested_type' => $type,
                 'report_id' => $report->id,
                 'appointment_id' => $appointment->id,
-                'report' => [
+                'report' => [ // استخدام => بدل من :
                     'date' => Carbon::parse($appointment->appointment_date)->format('Y-n-j h:i A'),
                     'clinic' => $appointment->clinic->name,
                     'doctor' => $doctor->user->first_name . ' ' . $doctor->user->last_name,
@@ -1150,7 +1182,29 @@ class DoctorController extends Controller
             ], 500);
         }
     }
+    public function updateActivityStatus()
+    {
+        try {
+            $doctor = Auth::user()->doctor;
+            if (!$doctor) {
+                return response()->json(['message' => 'Doctor profile not found'], 404);
+            }
+            $doctor->is_active = !$doctor->is_active;
+            $doctor->save();
 
+            return response()->json([
+                'succuss' => true,
+                'message' => $doctor->is_active ? 'You are active now' : 'You are inactive now',
+                'is_active' => $doctor->is_active ? true : false,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to update Status',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
 
@@ -1188,6 +1242,7 @@ class DoctorController extends Controller
                 try {
                     $appointment = Appointment::find($appointmentId);
 
+                    // Basic validation
                     if (!$appointment) {
                         $results['not_eligible'][] = [
                             'id' => $appointmentId,
@@ -1204,6 +1259,7 @@ class DoctorController extends Controller
                         continue;
                     }
 
+                    // Handle different statuses
                     if ($appointment->status === 'cancelled') {
                         $results['already_cancelled'][] = [
                             'id' => $appointment->id,
@@ -1230,6 +1286,7 @@ class DoctorController extends Controller
                         continue;
                     }
 
+                    // Proceed with cancellation
                     $appointment->update([
                         'status' => 'cancelled',
                         'cancelled_at' => $nowLocal,

@@ -189,16 +189,16 @@ Route::middleware(['auth:api', ApiAuthMiddleware::class])->group(function () {
     // Appointments
     Route::middleware(['role:secretary'])->group(function () {
 
-        Route::post('/appointments/{appointment}/reschedule', [AppointmentController::class, 'rescheduleAppointment']);
-        Route::post('/appointments/{appointment}/refund', [AppointmentController::class, 'processRefund']);
+      //  Route::post('/appointments/{appointment}/reschedule', [AppointmentController::class, 'rescheduleAppointment']);
+      //  Route::post('/appointments/{appointment}/refund', [AppointmentController::class, 'processRefund']);
 
 
 
         // Patients
-        Route::post('/patients', [SecretaryController::class, 'createPatient']); //tested
+      //  Route::post('/patients', [SecretaryController::class, 'createPatient']); //tested
 
         // Appointments + Payments
-        Route::post('secbook/appointment', [SecretaryController::class, 'bookAppointment']); //tested
+      //  Route::post('secbook/appointment', [SecretaryController::class, 'bookAppointment']); //tested
 
         // Wallet
         Route::get('/patients/{patient}/wallet', [SecretaryController::class, 'getPatientWalletInfo']); //testeed
@@ -303,11 +303,11 @@ Route::middleware(['auth:api', ApiAuthMiddleware::class])->group(function () {
             Route::patch('appointments/{appointment}/absent', [doctorController::class, 'markAsAbsent']); // tested
             Route::patch('appointments/{appointment}/complete', [DoctorController::class, 'markAsCompleted']); // tested
 
-            Route::get('specific/patients', [DoctorController::class, 'getDoctorSpecificPatients']); // tested
-            Route::get('patients/{patient}/profile', [DoctorController::class, 'getPatientDetails']); // tested
-            Route::get('patients/{patient}/documents', [DoctorController::class, 'getPatientDocuments']); //tested
-            Route::get('documents/{document}/prescriptions', [DoctorController::class, 'getPatientReport']); //tested
-            Route::post('/appointments/{appointment}/reports', [DoctorController::class, 'SubmitMedicalReport']); //tessted
+            Route::get('specific/patients',[DoctorController::class,'getDoctorSpecificPatients']); // tested
+             Route::get('patients/{patient}/profile',[DoctorController::class,'getPatientDetails']); // tested
+            Route::get('patients/{patient}/documents',[DoctorController::class,'getPatientDocuments']);//tested
+            Route::get('documents/{document}/prescriptions',[DoctorController::class,'getPatientReport']); //tested
+                Route::post('/appointments/{appointment}/reports', [DoctorController::class, 'SubmitMedicalReport']); //tessted
         });
     });
 
