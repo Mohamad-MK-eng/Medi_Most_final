@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 
 class SearchController extends Controller
 {
-    // Global clinic search
     public function searchClinics(Request $request)
     {
         $query = Clinic::query();
@@ -42,7 +41,7 @@ class SearchController extends Controller
                         'name' => $clinic->name,
                         'image_path' => $clinic->getIconUrl(),
                         'doctors_count' => count($clinic->doctors)
-/* $results = $query
+                        /* $results = $query
         ->withCount('doctors')
         ->get();
 
@@ -57,7 +56,6 @@ class SearchController extends Controller
         ]);
     }
 
-    // Global doctor search
     public function searchDoctors(Request $request)
     {
         $query = Doctor::with(['user', 'clinic', 'reviews']);
@@ -104,65 +102,64 @@ class SearchController extends Controller
                     'profile_picture_url' => $doctor->user->getFileUrl('profile_picture')
                 ];
             })
-        ],200);
+        ], 200);
     }
 
 
 
-public function searchPatients(Request $request)
-{
-      $query = Patient::with(['user', 'appointments' => function($q) {
-        $q->orderBy('appointment_date', 'desc')->limit(1);
-    }]);
+    public function searchPatients(Request $request)
+    {
+        $query = Patient::with(['user', 'appointments' => function ($q) {
+            $q->orderBy('appointment_date', 'desc')->limit(1);
+        }]);
 
-    if ($request->filled('keyword')) {
-        $keyword = $request->keyword;
+        if ($request->filled('keyword')) {
+            $keyword = $request->keyword;
 
-        $query->where(function ($q) use ($keyword) {
-            $q->whereHas('user', function ($uq) use ($keyword) {
-                $uq->where('first_name', 'like', "%$keyword%")
-                   ->orWhere('last_name', 'like', "%$keyword%");
-            })
-            ->orWhere('phone_number', 'like', "%$keyword%")
-            ->orWhereHas('user', function ($uq) use ($keyword) {
-                $uq->where('email', 'like', "%$keyword%");
+            $query->where(function ($q) use ($keyword) {
+                $q->whereHas('user', function ($uq) use ($keyword) {
+                    $uq->where('first_name', 'like', "%$keyword%")
+                        ->orWhere('last_name', 'like', "%$keyword%");
+                })
+                    ->orWhere('phone_number', 'like', "%$keyword%")
+                    ->orWhereHas('user', function ($uq) use ($keyword) {
+                        $uq->where('email', 'like', "%$keyword%");
+                    });
             });
-        });
-    } else {
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please provide a valid keyword to search.'
+            ], 400);
+        }
+
+        $results = $query->get();
+
+        if ($results->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No patients found matching your search keyword'
+            ], 404);
+        }
+
         return response()->json([
-            'success' => false,
-            'message' => 'Please provide a valid keyword to search.'
-        ], 400);
+            'success' => true,
+            'data' => $results->map(function ($patient) {
+                $lastVisit = $patient->appointments->first();
+
+                return [
+                    'patient_id' => $patient->id,
+                    'user_id' => $patient->user->id,
+                    'patient_name' => $patient->user->first_name . ' ' . $patient->user->last_name,
+                    'phone' => $patient->phone_number,
+                    'email' => $patient->user->email,
+                    'profile_picture_url' => $patient->user->getProfilePictureUrl(),
+                    'last_visit_at' => $lastVisit ? $lastVisit->appointment_date->format('Y-m-d') : 'Never'
+                ];
+            })
+        ], 200);
     }
 
-    $results = $query->get();
-
-    if ($results->isEmpty()) {
-        return response()->json([
-            'success' => false,
-            'message' => 'No patients found matching your search keyword'
-        ], 404);
-    }
-
-    return response()->json([
-        'success' => true,
-        'data' => $results->map(function ($patient) {
-            $lastVisit = $patient->appointments->first();
-
-            return [
-                'patient_id' => $patient->id,
-                'user_id' => $patient->user->id ,
-                'patient_name' => $patient->user->first_name . ' '. $patient->user->last_name, // FIXED: Added ->user->
-                'phone' => $patient->phone_number,
-                'email' => $patient->user->email,
-                'profile_picture_url' => $patient->user->getProfilePictureUrl(),
-                'last_visit_at' => $lastVisit ? $lastVisit->appointment_date->format('Y-m-d') : 'Never'
-            ];
-        })
-    ], 200);
-}
-
-    // Global secretary search
     public function searchSecretaries(Request $request)
     {
         $query = Secretary::with('user');

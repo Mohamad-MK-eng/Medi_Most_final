@@ -6,6 +6,7 @@ use App\Traits\HandlesFiles;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+
 /**
  *
  *
@@ -49,7 +50,7 @@ class Doctor extends Model
         'is_active'
     ];
 
-protected $dates =['deleted_at'];
+    protected $dates = ['deleted_at'];
 
 
 
@@ -85,7 +86,7 @@ protected $dates =['deleted_at'];
 
     public function clinic()
     {
-        return $this->belongsTo(Clinic::class,"clinic_id");
+        return $this->belongsTo(Clinic::class, "clinic_id");
     }
 
     public function timeSlots()
@@ -93,13 +94,12 @@ protected $dates =['deleted_at'];
         return $this->hasMany(TimeSlot::class);
     }
     public function salary()
-{
-    return $this->belongsTo(Salary::class);
-}
+    {
+        return $this->belongsTo(Salary::class);
+    }
 
 
 
-    // Helper methods
     public function isAvailable($date, $time)
     {
         return $this->workdays[$date] ?? false;
@@ -109,9 +109,9 @@ protected $dates =['deleted_at'];
 
 
     public function getGenderAttribute()
-{
-    return $this->user->gender;
-}
+    {
+        return $this->user->gender;
+    }
 
 
     public function getAvailableServices()
@@ -121,19 +121,16 @@ protected $dates =['deleted_at'];
 
 
 
-    // In App\Models\Doctor.php
 
     public function getAvailableSlots($date)
     {
         $dayOfWeek = strtolower(Carbon::parse($date)->englishDayOfWeek);
 
-        // Check if doctor works this day
         $schedule = $this->schedules()->where('day', $dayOfWeek)->first();
         if (!$schedule) {
             return collect();
         }
 
-        // Generate fixed slots (e.g., 5 per day)
         $slots = [];
         $start = Carbon::parse($schedule->start_time);
         $end = Carbon::parse($schedule->end_time);
@@ -143,7 +140,6 @@ protected $dates =['deleted_at'];
             $slotStart = $start->copy()->addMinutes($i * $interval);
             $slotEnd = $slotStart->copy()->addMinutes($interval);
 
-            // Check if slot is already booked
             $isBooked = Appointment::where('doctor_id', $this->id)
                 ->whereDate('appointment_date', $date)
                 ->whereTime('appointment_date', '>=', $slotStart->format('H:i:s'))
@@ -168,16 +164,16 @@ protected $dates =['deleted_at'];
     }
 
 
-public function averageRating()
-{
-    return $this->reviews()->avg('rating') ?? 0;
-}
+    public function averageRating()
+    {
+        return $this->reviews()->avg('rating') ?? 0;
+    }
 
-public function updateRating()
-{
-    $this->rating = $this->averageRating();
-    $this->save();
-}
+    public function updateRating()
+    {
+        $this->rating = $this->averageRating();
+        $this->save();
+    }
 
 
 
@@ -198,44 +194,30 @@ public function updateRating()
 
     public function getExperienceYearsAttribute()
     {
-        // Get the start date (use experience_start_date if available, otherwise created_at)
         $startDate = $this->experience_start_date ?? $this->created_at;
 
-        // If no start date exists, return 0
         if (!$startDate) {
             return 0;
         }
 
-        // Convert to Carbon instances
         $start = Carbon::parse($startDate);
         $now = Carbon::now();
 
-        // Ensure start date is in the past
         if ($start->isFuture()) {
             return 0;
         }
 
-        // Calculate and return whole years of experience
         return (int)$start->diffInYears($now);
     }
 
 
 
-public function scopeTopRated($query, $limit = 5)
-{
-    return $query->with('user') // Eager load the user relationship
-        ->whereHas('reviews') // Only include doctors with reviews
-        ->orderBy('rating', 'DESC')
-        ->orderBy('experience_years', 'DESC') // Secondary sort by experience
-        ->limit($limit);
-}
-
-/**
- * Calculate and update the doctor's average rating
- */
-
-
-
-
-
+    public function scopeTopRated($query, $limit = 5)
+    {
+        return $query->with('user')
+            ->whereHas('reviews')
+            ->orderBy('rating', 'DESC')
+            ->orderBy('experience_years', 'DESC')
+            ->limit($limit);
+    }
 }

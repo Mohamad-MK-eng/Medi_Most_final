@@ -72,7 +72,7 @@ class Patient extends Model
         'wallet_pin',
         'wallet_activated_at',
         'pin_attempts',
-    'wallet_locked_until'
+        'wallet_locked_until'
     ];
 
     protected $casts = [
@@ -83,8 +83,8 @@ class Patient extends Model
         'chronic_conditions' => 'array',
         'insurance_provider' => 'array',
         'wallet_activated_at' => 'datetime',
-         'wallet_balance' => 'float',
-    'wallet_locked_until' => 'datetime'
+        'wallet_balance' => 'float',
+        'wallet_locked_until' => 'datetime'
     ];
 
 
@@ -103,16 +103,15 @@ class Patient extends Model
     }
 
 
-    // In App\Models\Patient.php
     public function prescriptions()
     {
         return $this->hasManyThrough(
             Prescription::class,
             Appointment::class,
-            'patient_id', // Foreign key on appointments table
-            'appointment_id', // Foreign key on prescriptions table
-            'id', // Local key on patients table
-            'id' // Local key on appointments table
+            'patient_id',
+            'appointment_id',
+            'id',
+            'id'
         );
     }
 
@@ -210,56 +209,52 @@ class Patient extends Model
 
 
 
-public function deposit($amount, $notes = null, $secretaryId = null)
-{
-    // Check if wallet is activated before proceeding
-    if (!$this->wallet_pin || !$this->wallet_activated_at) {
-        return [
-            'success' => false,
-            'message' => 'Wallet is not activated',
-            'transaction' => null,
-            'new_balance' => $this->wallet_balance
-        ];
-    }
-
-    return DB::transaction(function () use ($amount, $notes, $secretaryId) {
-        // Get fresh data directly from database
-        $currentBalance = DB::table('patients')
-            ->where('id', $this->id)
-            ->value('wallet_balance');
-
-        $newBalance = (float)$currentBalance + (float)$amount;
-
-        $transactionData = [
-            'patient_id' => $this->id,
-            'amount' => (float)$amount,
-            'type' => 'deposit',
-            'reference' => 'DEP-' . now()->format('YmdHis'),
-            'balance_before' => $currentBalance,
-            'balance_after' => $newBalance,
-            'notes' => $notes
-        ];
-
-        if ($secretaryId) {
-            $transactionData['secretary_id'] = $secretaryId;
+    public function deposit($amount, $notes = null, $secretaryId = null)
+    {
+        if (!$this->wallet_pin || !$this->wallet_activated_at) {
+            return [
+                'success' => false,
+                'message' => 'Wallet is not activated',
+                'transaction' => null,
+                'new_balance' => $this->wallet_balance
+            ];
         }
 
-        // Create transaction
-        $transaction = WalletTransaction::create($transactionData);
+        return DB::transaction(function () use ($amount, $notes, $secretaryId) {
+            $currentBalance = DB::table('patients')
+                ->where('id', $this->id)
+                ->value('wallet_balance');
 
-        // Update balance directly in database
-        DB::table('patients')
-            ->where('id', $this->id)
-            ->update(['wallet_balance' => $newBalance]);
+            $newBalance = (float)$currentBalance + (float)$amount;
 
-        return [
-            'success' => true,
-            'message' => 'Deposit successful',
-            'transaction' => $transaction,
-            'new_balance' => $newBalance
-        ];
-    });
-}
+            $transactionData = [
+                'patient_id' => $this->id,
+                'amount' => (float)$amount,
+                'type' => 'deposit',
+                'reference' => 'DEP-' . now()->format('YmdHis'),
+                'balance_before' => $currentBalance,
+                'balance_after' => $newBalance,
+                'notes' => $notes
+            ];
+
+            if ($secretaryId) {
+                $transactionData['secretary_id'] = $secretaryId;
+            }
+
+            $transaction = WalletTransaction::create($transactionData);
+
+            DB::table('patients')
+                ->where('id', $this->id)
+                ->update(['wallet_balance' => $newBalance]);
+
+            return [
+                'success' => true,
+                'message' => 'Deposit successful',
+                'transaction' => $transaction,
+                'new_balance' => $newBalance
+            ];
+        });
+    }
 
 
     public function withdraw($amount, $notes = null)
@@ -290,10 +285,10 @@ public function deposit($amount, $notes = null, $secretaryId = null)
 
 
     public function isBlockedDueToAbsences()
-{
-    $absentThreshold = config('app.absent_appointment_threshold', 3);
-    return $this->appointments()->where('status', 'absent')->count() >= $absentThreshold;
-}
+    {
+        $absentThreshold = config('app.absent_appointment_threshold', 3);
+        return $this->appointments()->where('status', 'absent')->count() >= $absentThreshold;
+    }
 
 
 
@@ -301,15 +296,11 @@ public function deposit($amount, $notes = null, $secretaryId = null)
 
 
 
-public function hasTooManyAbsences()
-{
-    return $this->appointments()
-        ->where('status', 'absent')
-        ->where('cancelled_at', '>=', now()->subMonths(6)) // Only count last 6 months
-        ->count() >= config('app.absent_appointment_threshold', 3);
-}
-
-
-
-
+    public function hasTooManyAbsences()
+    {
+        return $this->appointments()
+            ->where('status', 'absent')
+            ->where('cancelled_at', '>=', now()->subMonths(6)) // Only count last 6 months
+            ->count() >= config('app.absent_appointment_threshold', 3);
+    }
 }

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Role;
 use App\Notifications\VerifyEmailNotification;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -43,7 +44,7 @@ class AuthController extends Controller
                 'role_id' => $patientRole->id,
             ]);
             /// me me me m e
-            //  this is fucking insan
+            //  this is  insan
             Patient::create([
                 'user_id' => $user->id,
 
@@ -54,14 +55,15 @@ class AuthController extends Controller
             $token = $user->createToken('Patient Access Token')->accessToken;
 
 
-            // if we do not have internet we will remove this
-            $user->notify(new VerifyEmailNotification($token));
+            $user->sendEmailVerificationNotification();
+
+
 
             return response()->json([
-                'message' => 'Patient registered successfully',
-                'access_token' => $token,
+                'message' => 'Patient registered successfully , please check your email to verify your account habibi',
                 'token_type' => 'Bearer',
-                'user' => $user
+                'user' => $user,
+                'requires_verification' => true
             ], 201);
         });
     }
@@ -85,12 +87,26 @@ class AuthController extends Controller
         }
 
         $user = Auth::user();
-        $user->tokens()->delete(); // for  previous tokens
+        $user->tokens()->delete();
 
         $token = $user->createToken('Personal Access Token')->accessToken;
 
-        // in case patient
         if ($user->role->name === 'patient' || $user->role->name === 'doctor') {
+
+
+
+            if (!$user->hasVerifiedEmail()) {
+                Auth::logout();
+
+                return response()->json([
+                    'error' => 'Email not verified',
+                    'message' => 'Please verify your email address before logging in.',
+                    'requires_verification' => true,
+                    'user_id' => $user->id
+                ], 403);
+            }
+
+
 
             return response()->json([
                 'message' => 'Patient logged in successfully',
@@ -115,48 +131,9 @@ class AuthController extends Controller
             'role_name' => $user->role->name,
         ]);
     }
-    // to try
-    public function sendPasswordResetLink(Request $request)
-    {
-        $request->validate(['email' => 'required|email']);
 
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
 
-        return $status === Password::RESET_LINK_SENT
-            ? response()->json(['message' => __($status)])
-            : response()->json(['error' => __($status)], 400);
-    }
 
-    /**
-     * Reset password
-     */
-    public function resetPassword(Request $request)
-    {
-        $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed',
-        ]);
-
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) {
-                $user->forceFill([
-                    'password' => Hash::make($password)
-                ])->setRememberToken(Str::random(60));
-
-                $user->save();
-
-                event(new PasswordReset($user));
-            }
-        );
-
-        return $status === Password::PASSWORD_RESET
-            ? response()->json(['message' => __($status)])
-            : response()->json(['error' => __($status)], 400);
-    }
 
     /**
      * Change password (protected route - requires authentication)
@@ -188,6 +165,62 @@ class AuthController extends Controller
 
 
 
+    public function resendVerification(Request $request)
+    {
+        $request->validate([
+            'user_id' => 'required|exists:users,id'
+        ]);
+
+        $user = User::find($request->user_id);
+
+        if ($user->hasVerifiedEmail()) {
+            return response()->json([
+                'message' => 'Email already verified.'
+            ], 400);
+        }
+
+        $user->sendEmailVerificationNotification();
+
+        return response()->json([
+            'message' => 'Verification email sent successfully.'
+        ]);
+    }
+
+
+
+
+
+
+    public function verify(Request $request, $id, $hash)
+    {
+        $user = User::find($id);
+
+        if (!$user) {
+            return response()->json([
+                'error' => 'User not found.'
+            ], 404);
+        }
+
+        if (!hash_equals(sha1($user->email), $hash)) {
+            return response()->json([
+                'error' => 'Invalid verification link.'
+            ], 400);
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            return response()->json([
+                'message' => 'Email already verified.'
+            ], 200);
+        }
+
+        if ($user->markEmailAsVerified()) {
+            event(new Verified($user));
+        }
+
+        return response()->json([
+            'message' => 'Email verified successfully! You can now log in.'
+        ], 200);
+    }
 
 
 

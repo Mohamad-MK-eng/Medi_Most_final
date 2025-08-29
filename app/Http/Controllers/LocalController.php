@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 
-class LocalController extends Controller  // for handling errors
+class LocalController extends Controller
 {
     public function sendResponse($result, $data_name = "data")
     {

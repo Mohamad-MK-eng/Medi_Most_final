@@ -17,7 +17,6 @@ use Illuminate\Support\Facades\Storage;
 
 class ClinicController extends Controller
 {
-    // Get all clinics with their images
     public function index()
     {
         $clinics = Clinic::all()->map(function ($clinic) {
@@ -36,7 +35,6 @@ class ClinicController extends Controller
 
 
 
-    // for a single clinic
 
     public function show($id)
     {
@@ -54,7 +52,6 @@ class ClinicController extends Controller
 
 
 
-    // modify for a single clinic
     public function getIconUrl($id)
     {
         $clinic = Clinic::findOrFail($id);
@@ -95,16 +92,13 @@ class ClinicController extends Controller
 
 
 
-    // In AppointmentController.php
 
     public function getClinicDoctors(Clinic $clinic)
     {
-        // Eager load the necessary relationships
         $doctors = $clinic->doctors()
             ->with(['user', 'reviews', 'schedules'])
             ->get();
 
-        // Format the response
 
         // مبدئيا هيك تمام بس انت حاطط شرط حلو تبع is active هاد في حال بدو يستقيل ويصفي معايناته القديمة وما بده حدا جديد
         // بتعمل فلترة على اللي is active ? true
@@ -171,33 +165,34 @@ class ClinicController extends Controller
     }
 
 
-    
+
 
 
     public function getDoctorDetails(Doctor $doctor)
     {
-        $doctor->load(['reviews', 'schedules','user']);
-$averageRating = $doctor->reviews->avg('rating');
+        $doctor->load(['reviews', 'schedules', 'user']);
+        $averageRating = $doctor->reviews->avg('rating');
         $schedule = $doctor->schedules->map(function ($schedule) {
             return [
                 'day' => ucfirst($schedule->day),
-                 'start_time' => Carbon::parse($schedule->start_time)->format('g:i A'),
+                'start_time' => Carbon::parse($schedule->start_time)->format('g:i A'),
                 'end_time' => Carbon::parse($schedule->end_time)->format('g:i A')
             ];
         });
 
         return response()->json([
-            'name'=> $doctor->user->first_name . ' ' . $doctor->user->last_name ,
+            'name' => $doctor->user->first_name . ' ' . $doctor->user->last_name,
             'specialty' => $doctor->specialty,
             'rate' => $doctor->rating,
-            'consultation_fee' => $doctor->consultation_fee,2,
+            'consultation_fee' => $doctor->consultation_fee,
+            2,
             'bio' => $doctor->bio,
             'schedule' => $schedule,
             'review_count' => $doctor->reviews->count(),
 
             'method' => [
-            'cash' => true,
-            'wallet' => true
+                'cash' => true,
+                'wallet' => true
             ]
         ]);
     }
@@ -216,82 +211,66 @@ $averageRating = $doctor->reviews->avg('rating');
 
 
 
-public function getWalletBalance($clinicId)
-{
-    $clinic = Clinic::findOrFail($clinicId);
-    $wallet = $clinic->wallet()->firstOrCreate(['clinic_id' => $clinicId]);
+    public function getWalletBalance($clinicId)
+    {
+        $clinic = Clinic::findOrFail($clinicId);
+        $wallet = $clinic->wallet()->firstOrCreate(['clinic_id' => $clinicId]);
 
-    return response()->json([
-        'clinic_id' => $clinic->id,
-        'clinic_name' => $clinic->name,
-        'balance' => $wallet->balance,
-        'last_updated' => $wallet->updated_at
-    ]);
-}
-
-public function getWalletTransactions($clinicId)
-{
-    $wallet = MedicalCenterWallet::with('transactions')
-        ->where('clinic_id', $clinicId)
-        ->firstOrFail();
-
-    return response()->json([
-        'clinic_id' => $wallet->clinic_id,
-        'balance' => $wallet->balance,
-        'transactions' => $wallet->transactions()->orderBy('created_at', 'desc')->paginate(10)
-    ]);
-}
-
-public function withdrawFromWallet(Request $request, $clinicId)
-{
-    $validated = $request->validate([
-        'amount' => 'required|numeric|min:0.01',
-        'notes' => 'sometimes|string|max:255'
-    ]);
-
-    $wallet = MedicalCenterWallet::where('clinic_id', $clinicId)->firstOrFail();
-
-    if ($wallet->balance < $validated['amount']) {
         return response()->json([
-            'message' => 'Insufficient balance',
-            'current_balance' => $wallet->balance
-        ], 400);
+            'clinic_id' => $clinic->id,
+            'clinic_name' => $clinic->name,
+            'balance' => $wallet->balance,
+            'last_updated' => $wallet->updated_at
+        ]);
     }
 
-    return DB::transaction(function () use ($wallet, $validated) {
-        $wallet->decrement('balance', $validated['amount']);
-
-        MedicalCenterWalletTransaction::create([
-            'clinic_wallet_id' => $wallet->id,
-            'amount' => $validated['amount'],
-            'type' => 'withdrawal',
-            'reference' => 'WDR-' . now()->format('YmdHis'),
-            'balance_before' => $wallet->balance + $validated['amount'],
-            'balance_after' => $wallet->balance,
-            'notes' => $validated['notes'] ?? 'Cash withdrawal'
-        ]);
+    public function getWalletTransactions($clinicId)
+    {
+        $wallet = MedicalCenterWallet::with('transactions')
+            ->where('clinic_id', $clinicId)
+            ->firstOrFail();
 
         return response()->json([
-            'message' => 'Withdrawal successful',
-            'new_balance' => $wallet->balance,
-            'withdrawal_amount' => $validated['amount']
+            'clinic_id' => $wallet->clinic_id,
+            'balance' => $wallet->balance,
+            'transactions' => $wallet->transactions()->orderBy('created_at', 'desc')->paginate(10)
         ]);
-    });
+    }
+
+    public function withdrawFromWallet(Request $request, $clinicId)
+    {
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'notes' => 'sometimes|string|max:255'
+        ]);
+
+        $wallet = MedicalCenterWallet::where('clinic_id', $clinicId)->firstOrFail();
+
+        if ($wallet->balance < $validated['amount']) {
+            return response()->json([
+                'message' => 'Insufficient balance',
+                'current_balance' => $wallet->balance
+            ], 400);
+        }
+
+        return DB::transaction(function () use ($wallet, $validated) {
+            $wallet->decrement('balance', $validated['amount']);
+
+            MedicalCenterWalletTransaction::create([
+                'clinic_wallet_id' => $wallet->id,
+                'amount' => $validated['amount'],
+                'type' => 'withdrawal',
+                'reference' => 'WDR-' . now()->format('YmdHis'),
+                'balance_before' => $wallet->balance + $validated['amount'],
+                'balance_after' => $wallet->balance,
+                'notes' => $validated['notes'] ?? 'Cash withdrawal'
+            ]);
+
+            return response()->json([
+                'message' => 'Withdrawal successful',
+                'new_balance' => $wallet->balance,
+                'withdrawal_amount' => $validated['amount']
+            ]);
+        });
+    }
 }
-
-
-
-
-
-
-
-
-}
-
-
-
-
-
-
-
-

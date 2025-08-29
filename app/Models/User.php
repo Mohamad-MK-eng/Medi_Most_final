@@ -10,6 +10,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Passport\HasApiTokens;
 use App\Traits\HandlesFiles;
 use Illuminate\Database\Eloquent\SoftDeletes;
+
 /**
  *
  *
@@ -65,19 +66,19 @@ class User extends Authenticatable implements MustVerifyEmail   // in case no in
      * @var list<string>
      */
     // هون عدلت
-   protected $fillable = [
-    'first_name',
-    'last_name',
-    'email',
-    'password',
-    'role_id',
-    'gender',
-    'profile_picture',
-    'phone',
-    'address',
-];
-// phone and address addition
-protected $dates =['deleted_at'];
+    protected $fillable = [
+        'first_name',
+        'last_name',
+        'email',
+        'password',
+        'role_id',
+        'gender',
+        'profile_picture',
+        'phone',
+        'address',
+    ];
+    // phone and address addition
+    protected $dates = ['deleted_at'];
 
 
     protected $fileHandlingConfig = [
@@ -124,9 +125,9 @@ protected $dates =['deleted_at'];
 
 
     public function admin()
-{
-    return $this->hasOne(Admin::class);
-}
+    {
+        return $this->hasOne(Admin::class);
+    }
 
 
 
@@ -157,21 +158,19 @@ protected $dates =['deleted_at'];
 
 
 
-    //public function hasRole(string $role):bool {
-    //  return $this->role()->where('first_name',$role)->exists();
-    //}
-public function payments()
-{
-    if (!$this->relationLoaded('patient')) {
-        $this->load('patient');
-    }
 
-    if (!$this->patient) {
-        return null;
-    }
+    public function payments()
+    {
+        if (!$this->relationLoaded('patient')) {
+            $this->load('patient');
+        }
 
-    return $this->patient->payments();
-}
+        if (!$this->patient) {
+            return null;
+        }
+
+        return $this->patient->payments();
+    }
 
 
 
@@ -206,15 +205,18 @@ public function payments()
 
 
 
-   public function sendEmailVerificationNotification()
+    public function sendEmailVerificationNotification()
     {
         $this->notify(new VerifyEmailNotification($this));
     }
 
+
+
+
+
+
+    public function sendPasswordResetNotification($token)
+    {
+        $this->notify(new \App\Notifications\ResetPasswordNotification($token));
+    }
 }
-
-
-
-
-
-

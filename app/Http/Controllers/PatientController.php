@@ -51,7 +51,6 @@ class PatientController extends Controller
         $patient = Auth::user();
         $patient->getProfilePictureUrl();
 
-        // Add user fields
         $profile['first_name'] = $patient->user->first_name;
         $profile['last_name'] = $patient->user->last_name;
 
@@ -87,7 +86,6 @@ class PatientController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Handle profile picture update if present
         if ($request->hasFile('profile_picture')) {
             try {
                 $patient->uploadFile($request->file('profile_picture'), 'profile_picture');
@@ -113,10 +111,8 @@ class PatientController extends Controller
             ]);
         }
 
-        // Remove user-related fields from patient data
         $patientData = collect($validated)->except(['first_name', 'last_name', 'profile_picture'])->all();
 
-        // Update patient data
         $patient->update($patientData);
 
         return response()->json([
@@ -149,18 +145,14 @@ class PatientController extends Controller
         }
 
         try {
-            // Get the stored path
             $path = $patient->getFileUrl('profile_picture');
 
-            // Remove any 'storage/' prefix if present
             $path = str_replace('storage/', '', $path);
 
-            // Check if file exists
             if (!Storage::disk('public')->exists($path)) {
                 return response()->json(['message' => 'Profile picture file not found'], 404);
             }
 
-            // Get the full filesystem path
             $fullPath = Storage::disk('public')->path($path);
 
             return response()->file($fullPath);
@@ -189,7 +181,6 @@ class PatientController extends Controller
         }
 
         try {
-            // Upload the file using the HandlesFiles trait
             $uploaded = $patient->user->uploadFile($request->file('profile_picture'), 'profile_picture');
 
             if (!$uploaded) {
@@ -213,7 +204,6 @@ class PatientController extends Controller
 
 
 
-    // 2. Get doctors for a clinic with profile pictures
 
 
 
@@ -259,13 +249,12 @@ class PatientController extends Controller
             return response()->json(['message' => 'Patient profile not found'], 404);
         }
 
-        // Alternative 1: If prescriptions are linked via appointments
         $prescriptions = $patient->appointments()
-            ->with(['prescription']) // Ensure 'prescription' is a defined relationship in Appointment model
-            ->whereHas('prescription') // Only appointments with prescriptions
+            ->with(['prescription'])
+            ->whereHas('prescription')
             ->get()
-            ->pluck('prescription') // Extract prescriptions
-            ->filter(); // Remove null entries (if any)
+            ->pluck('prescription')
+            ->filter();
 
 
         return response()->json($prescriptions);
@@ -288,10 +277,4 @@ class PatientController extends Controller
 
         return response()->json($review, 201);
     }
-
-
-
-
-
-
 }

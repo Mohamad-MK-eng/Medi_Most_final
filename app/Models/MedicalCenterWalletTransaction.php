@@ -15,7 +15,7 @@ class MedicalCenterWalletTransaction extends Model
         'balance_before',
         'balance_after',
         'notes',
-        'clinic_id' // to track which clinic the transaction is related to
+        'clinic_id'
     ];
 
     public function wallet()

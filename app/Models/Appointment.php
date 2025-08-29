@@ -103,7 +103,6 @@ return $this->hasOne(Report::class);
 
 
 
-    // Helper methods
     public function isUpcoming()
     {
         return $this->appointment_date >= now();
@@ -116,7 +115,6 @@ return $this->hasOne(Report::class);
 
 
 
-// In App\Models\Appointment
 public function timeSlot()
 {
     return $this->belongsTo(TimeSlot::class, 'time_slot_id');

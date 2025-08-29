@@ -16,12 +16,12 @@ class TimeSlot extends Model
         'is_booked'
     ];
 
-protected $casts = [
-    'date' => 'date:Y-m-d',
-    'start_time' => 'string', // Store as string since it's just time
-    'end_time' => 'string',   // Store as string since it's just time
-    'is_booked' => 'boolean'
-];
+    protected $casts = [
+        'date' => 'date:Y-m-d',
+        'start_time' => 'string',
+        'end_time' => 'string',
+        'is_booked' => 'boolean'
+    ];
 
 
 
@@ -30,35 +30,33 @@ protected $casts = [
         return $this->belongsTo(Doctor::class);
     }
 
-// In TimeSlot.php model
-public static function cleanupOldSlots()
-{
-    $now = Carbon::now();
-    return self::where('date', '<', $now->format('Y-m-d'))
-        ->orWhere(function($query) use ($now) {
-            $query->where('date', $now->format('Y-m-d'))
-                  ->where('end_time', '<', $now->format('H:i:s'));
-        })
-        ->delete();
-}
+    public static function cleanupOldSlots()
+    {
+        $now = Carbon::now();
+        return self::where('date', '<', $now->format('Y-m-d'))
+            ->orWhere(function ($query) use ($now) {
+                $query->where('date', $now->format('Y-m-d'))
+                    ->where('end_time', '<', $now->format('H:i:s'));
+            })
+            ->delete();
+    }
 
 
-    // TimeSlot.php
-public function getFormattedStartTimeAttribute(): string
-{
-    return Carbon::parse($this->start_time)->format('g:i A');
-}
+    public function getFormattedStartTimeAttribute(): string
+    {
+        return Carbon::parse($this->start_time)->format('g:i A');
+    }
 
 
-public function getStartTimeDigitalAttribute(): string
-{
-    return Carbon::parse($this->start_time)->format('H:i');
-}
+    public function getStartTimeDigitalAttribute(): string
+    {
+        return Carbon::parse($this->start_time)->format('H:i');
+    }
 
-public function getEndTimeDigitalAttribute(): string
-{
-    return Carbon::parse($this->end_time)->format('H:i');
-}
+    public function getEndTimeDigitalAttribute(): string
+    {
+        return Carbon::parse($this->end_time)->format('H:i');
+    }
 
 
 

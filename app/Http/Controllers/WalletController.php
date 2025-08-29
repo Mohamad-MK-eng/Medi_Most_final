@@ -17,19 +17,18 @@ class WalletController extends Controller
     {
         $patient = Auth::user()->patient;
         if (is_null($patient->wallet_activated_at)) {
+            return response()->json([
+                'success' => false,
+                'error_code' => 'wallet_not_activated',
+                'message' => 'Please activate your wallet before checking balance.'
+            ], 403);
+        }
+        $formatedDate = Carbon::parse($patient->wallet_activated_at)->format('Y/m/d');
         return response()->json([
-            'success' => false,
-            'error_code' => 'wallet_not_activated',
-            'message' => 'Please activate your wallet before checking balance.'
-        ], 403);
-    }
-    $formatedDate = Carbon::parse($patient->wallet_activated_at)->format('Y/m/d');
-    return response()->json([
-        'success' => true,
-        'balance' =>  $patient->wallet_balance,
-        'wallet_activated_at' => $formatedDate,
-    ], 200);
-
+            'success' => true,
+            'balance' =>  $patient->wallet_balance,
+            'wallet_activated_at' => $formatedDate,
+        ], 200);
     }
 
     public function addFunds(Request $request)
@@ -65,48 +64,44 @@ class WalletController extends Controller
 
 
     public function changePin(Request $request)
-{
-    $request->validate([
-        'current_pin' => 'required|digits:4',
-        'new_pin' => 'required|digits:4',
+    {
+        $request->validate([
+            'current_pin' => 'required|digits:4',
+            'new_pin' => 'required|digits:4',
 
-    ]);
+        ]);
 
-    $user = Auth::user();
-    $patient = $user->patient;
+        $user = Auth::user();
+        $patient = $user->patient;
 
-    if (!$patient) {
-        return response()->json(['message' => 'Patient profile not found'], 404);
-    }
+        if (!$patient) {
+            return response()->json(['message' => 'Patient profile not found'], 404);
+        }
 
-    // Verify wallet is activated
-    if (!$patient->wallet_activated_at) {
-        return response()->json(['message' => 'Wallet not activated'], 400);
-    }
+        if (!$patient->wallet_activated_at) {
+            return response()->json(['message' => 'Wallet not activated'], 400);
+        }
 
-    // Verify current PIN
-    if (!Hash::check($request->current_pin, $patient->wallet_pin)) {
+        if (!Hash::check($request->current_pin, $patient->wallet_pin)) {
+            return response()->json([
+                'message' => 'Incorrect current PIN'
+            ], 401);
+        }
+
+        if (Hash::check($request->new_pin, $patient->wallet_pin)) {
+            return response()->json([
+                'message' => 'New PIN must be different from current PIN'
+            ], 400);
+        }
+
+        $patient->update([
+            'wallet_pin' => Hash::make($request->new_pin),
+        ]);
+
         return response()->json([
-            'message' => 'Incorrect current PIN'
-        ], 401);
+            'message' => 'PIN changed successfully'
+        ]);
     }
-
-    // Check if new PIN is different
-    if (Hash::check($request->new_pin, $patient->wallet_pin)) {
-        return response()->json([
-            'message' => 'New PIN must be different from current PIN'
-        ], 400);
-    }
-
-    // Update the PIN
-    $patient->update([
-        'wallet_pin' => Hash::make($request->new_pin),
-    ]);
-
-    return response()->json([
-        'message' => 'PIN changed successfully'
-    ]);
-}
 
 
 
@@ -114,7 +109,6 @@ class WalletController extends Controller
 
     public function getTransactions($patientId = null)
     {
-        // If patientId is provided, verify the requester has permission
         if ($patientId) {
             if (
                 !Auth::user()->hasRole('admin') &&
@@ -125,7 +119,6 @@ class WalletController extends Controller
 
             $patient = Patient::findOrFail($patientId);
         } else {
-            // Get transactions for current patient
             $patient = Auth::user()->patient;
             if (!$patient) {
                 return response()->json(['message' => 'Patient profile not found'], 404);
@@ -143,7 +136,6 @@ class WalletController extends Controller
     {
         $validated = $request->validate([
             'pin' => 'required|digits:4',
-         // لا تحطو يا كحبة   'pin_confirmation' => 'required'
         ]);
 
         $user = Auth::user();

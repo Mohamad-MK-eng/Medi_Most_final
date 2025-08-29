@@ -21,19 +21,16 @@ class RatingController extends Controller
 
         $appointment = Appointment::findOrFail($request->appointment_id);
 
-        // Verify the authenticated user is the patient for this appointment
         $user = Auth::user();
         $patient = $user->patient;
         if (!$patient) {
             return response()->json(['message' => 'Patient profile not found'], 404);
         }
 
-        // Check if appointment is completed
         if ($appointment->status !== 'completed') {
             return response()->json(['message' => 'You can only rate completed appointments'], 400);
         }
 
-        // Check if already rated
         if (Review::where('appointment_id', $request->appointment_id)->exists()) {
             return response()->json(['message' => 'You have already rated this appointment'], 400);
         }
@@ -46,7 +43,6 @@ class RatingController extends Controller
             'comment' => $request->comment
         ]);
 
-        // Update doctor's average rating
         $appointment->doctor->updateRating();
 
         return response()->json([
@@ -60,9 +56,9 @@ class RatingController extends Controller
     {
         $topDoctors = Doctor::with(['user', 'reviews'])
             ->withAvg('reviews as average_rating', 'rating')
-            ->has('reviews') // Only doctors with reviews
+            ->has('reviews')
             ->orderByDesc('average_rating')
-            ->orderByDesc('experience_years') // Secondary sort
+            ->orderByDesc('experience_years')
             ->limit(5)
             ->get()
             ->map(function ($doctor) {

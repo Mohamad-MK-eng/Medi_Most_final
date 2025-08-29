@@ -6,17 +6,16 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use Illuminate\Support\Facades\Lang;
 
-class ResetPasswordNotification extends Notification
+class ResetPasswordNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public $token;
+    public $code;
 
-    public function __construct($token)
+    public function __construct($code)
     {
-        $this->token = $token;
+        $this->code = $code;
     }
 
     public function via($notifiable)
@@ -26,13 +25,12 @@ class ResetPasswordNotification extends Notification
 
     public function toMail($notifiable)
     {
-        $url = url(config('app.url').'/reset-password?token='.$this->token.'&email='.$notifiable->email);
-
         return (new MailMessage)
-            ->subject(Lang::get('Reset Password Notification'))
-            ->line(Lang::get('You are receiving this email because we received a password reset request for your account.'))
-            ->action(Lang::get('Reset Password'), $url)
-            ->line(Lang::get('This password reset link will expire in :count minutes.', ['count' => config('auth.passwords.'.config('auth.defaults.passwords').'.expire')]))
-            ->line(Lang::get('If you did not request a password reset, no further action is required.'));
+            ->subject('Password Reset Verification Code')
+            ->line('You are receiving this email because we received a password reset request for your account.')
+            ->line('Your verification code is:')
+            ->line('## ' . $this->code) // Large, prominent code
+            ->line('This code will expire in 15 minutes.')
+            ->line('If you did not request a password reset, no further action is required.');
     }
 }

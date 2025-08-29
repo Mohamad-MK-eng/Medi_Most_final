@@ -19,7 +19,7 @@ class Clinic extends Model
         'specialty'
     ];
 
-// specialty addition
+
     protected $fileHandlingConfig = [
         'image_path' => [
             'directory' => 'clinic_images',
@@ -60,23 +60,20 @@ public function wallet()
             return asset('storage/clinic_icons/default.jpg');
         }
 
-        // Manually construct the URL to ensure consistency
         return url('storage/clinic_icons/' . basename($this->image_path));
     }
 
   public function uploadIcon($iconFile)
 {
     try {
-        // Delete old icon if exists
         if ($this->image_path) {
             $oldFilename = basename($this->image_path);
             Storage::disk('public')->delete('clinic_icons/' . $oldFilename);
         }
 
-        // Store in clinic_icons directory and get filename only
         $path = $iconFile->store('clinic_icons', 'public');
         $filename = basename($path);
-        
+
         $this->image_path = $filename; // تخزين اسم الملف فقط
         $this->save();
 
