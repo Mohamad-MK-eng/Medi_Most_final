@@ -24,7 +24,6 @@ class AppointmentBooked extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        // You can add 'database' if you want to store in DB
         return ['database'];
     }
 

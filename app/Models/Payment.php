@@ -86,7 +86,6 @@ public function walletTransaction()
 
 
 
-    // Helper methods
     public function isPaid()
     {
         return $this->status === 'paid';

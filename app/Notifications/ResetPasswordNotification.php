@@ -29,7 +29,7 @@ class ResetPasswordNotification extends Notification implements ShouldQueue
             ->subject('Password Reset Verification Code')
             ->line('You are receiving this email because we received a password reset request for your account.')
             ->line('Your verification code is:')
-            ->line('## ' . $this->code) // Large, prominent code
+            ->line('## ' . $this->code)
             ->line('This code will expire in 15 minutes.')
             ->line('If you did not request a password reset, no further action is required.');
     }

@@ -77,7 +77,6 @@ class User extends Authenticatable implements MustVerifyEmail   // in case no in
         'phone',
         'address',
     ];
-    // phone and address addition
     protected $dates = ['deleted_at'];
 
 

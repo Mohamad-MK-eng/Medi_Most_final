@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Patient;
 use App\Models\Payment;
 use App\Models\WalletTransaction;
+use App\Notifications\WalletFundsAddedNotification;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
@@ -51,6 +52,12 @@ class WalletController extends Controller
                 $validated['notes'] ?? 'Added by staff',
 
             );
+
+            $patient->user->notify(new WalletFundsAddedNotification(
+                $validated['amount'],
+                $patient->fresh()->wallet_balance,
+                $validated['notes'] ?? null
+            ));
 
             return response()->json([
                 'success' => true,
@@ -168,7 +175,7 @@ class WalletController extends Controller
 
 
 
-    //
+
     public function transferToClinic(Request $request)
     {
         $validated = $request->validate([

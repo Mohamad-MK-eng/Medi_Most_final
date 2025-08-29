@@ -17,6 +17,9 @@ use App\Models\Secretary;
 use App\Models\TimeSlot;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Notifications\PatientBlockedNotification;
+use App\Notifications\DoctorProfileUpdatedNotification;
+
 use Auth;
 use Carbon\Carbon;
 use DB;
@@ -499,14 +502,15 @@ public function createDoctor(Request $request)
     }
 }
 
-public function editDoctor(Request $request, $doctorId){
+
+public function editDoctor(Request $request, $doctorId)
+{
     // البحث عن الطبيب أولاً
     $doctor = Doctor::with('user')->find($doctorId);
     if (!$doctor) {
         return response()->json(['message' => 'Doctor not found'], 404);
     }
 
-    // طباعة البيانات المستلمة للتشخيص
     \Log::info('Edit Doctor Request Data:', $request->all());
 
     $validator = Validator::make($request->all(), [
@@ -551,50 +555,83 @@ public function editDoctor(Request $request, $doctorId){
     }
 
     $validated = $validator->validated();
+    $adminName = Auth::user()->name;
+    $updatedFields = [];
 
     try {
-        return DB::transaction(function () use ($request, $doctor, $validated) {
-            // تحديث بيانات المستخدم
-            if (isset($validated['first_name']) ||
-                isset($validated['last_name']) ||
-                isset($validated['email']) ||
-                isset($validated['phone_number']) ||
-                isset($validated['gender'])) {
-
-                $userData = [];
-                if (isset($validated['first_name'])) $userData['first_name'] = $validated['first_name'];
-                if (isset($validated['last_name'])) $userData['last_name'] = $validated['last_name'];
-                if (isset($validated['email'])) $userData['email'] = $validated['email'];
-                if (isset($validated['phone_number'])) $userData['phone'] = $validated['phone_number']; // تحويل إلى phone
-                if (isset($validated['gender'])) $userData['gender'] = $validated['gender'];
-
-                \Log::info('Updating user data:', $userData);
-                $doctor->user->update($userData);
+        return DB::transaction(function () use ($request, $doctor, $validated, $adminName, &$updatedFields) {
+            // Track changes for user data
+            $userChanges = [];
+            if (isset($validated['first_name'])) {
+                $userChanges['first_name'] = $validated['first_name'];
+                $updatedFields['first_name'] = $validated['first_name'];
+            }
+            if (isset($validated['last_name'])) {
+                $userChanges['last_name'] = $validated['last_name'];
+                $updatedFields['last_name'] = $validated['last_name'];
+            }
+            if (isset($validated['email'])) {
+                $userChanges['email'] = $validated['email'];
+                $updatedFields['email'] = $validated['email'];
+            }
+            if (isset($validated['phone_number'])) {
+                $userChanges['phone'] = $validated['phone_number'];
+                $updatedFields['phone'] = $validated['phone_number'];
+            }
+            if (isset($validated['gender'])) {
+                $userChanges['gender'] = $validated['gender'];
+                $updatedFields['gender'] = $validated['gender'];
             }
 
-            // تحديث بيانات الطبيب
-            $doctorData = collect($validated)
-                ->except(['first_name', 'last_name', 'email', 'phone_number', 'gender', 'schedules'])
-                ->toArray();
+            // Update user data if there are changes
+            if (!empty($userChanges)) {
+                \Log::info('Updating user data:', $userChanges);
+                $doctor->user->update($userChanges);
+            }
 
-            // تحديث workdays إذا تم تحديث schedules
+            // Track changes for doctor data
+            $doctorChanges = [];
+            if (isset($validated['specialty'])) {
+                $doctorChanges['specialty'] = $validated['specialty'];
+                $updatedFields['specialty'] = $validated['specialty'];
+            }
+            if (isset($validated['consultation_fee'])) {
+                $doctorChanges['consultation_fee'] = $validated['consultation_fee'];
+                $updatedFields['consultation_fee'] = $validated['consultation_fee'];
+            }
+            if (isset($validated['experience_years'])) {
+                $doctorChanges['experience_years'] = $validated['experience_years'];
+                $updatedFields['experience_years'] = $validated['experience_years'];
+            }
+            if (isset($validated['clinic_id'])) {
+                $doctorChanges['clinic_id'] = $validated['clinic_id'];
+                $updatedFields['clinic'] = 'Changed'; // We'll get clinic name later
+            }
+            if (isset($validated['is_active'])) {
+                $doctorChanges['is_active'] = $validated['is_active'];
+                $updatedFields['status'] = $validated['is_active'] ? 'Active' : 'Inactive';
+            }
+
+            // Update workdays if schedules are updated
             if (isset($validated['schedules'])) {
-                $doctorData['workdays'] = collect($validated['schedules'])->pluck('day')->toArray();
+                $doctorChanges['workdays'] = collect($validated['schedules'])->pluck('day')->toArray();
+                $updatedFields['schedule'] = 'Updated';
             }
 
-            if (!empty($doctorData)) {
-                \Log::info('Updating doctor data:', $doctorData);
-                $doctor->update($doctorData);
+            // Update doctor data if there are changes
+            if (!empty($doctorChanges)) {
+                \Log::info('Updating doctor data:', $doctorChanges);
+                $doctor->update($doctorChanges);
             }
 
-            // تحديث جدول المواعيد
+            // Handle schedule updates
             if (isset($validated['schedules'])) {
                 \Log::info('Updating schedules:', $validated['schedules']);
 
-                // حذف الجداول القديمة
+                // Delete old schedules
                 $doctor->schedules()->delete();
 
-                // إدخال الجداول الجديدة
+                // Create new schedules
                 foreach ($validated['schedules'] as $schedule) {
                     $doctor->schedules()->create([
                         'day' => $schedule['day'],
@@ -603,19 +640,31 @@ public function editDoctor(Request $request, $doctorId){
                     ]);
                 }
 
-                // حذف المواعيد الزمنية المستقبلية القديمة
+                // Delete future time slots
                 $doctor->timeSlots()->where('date', '>=', now()->format('Y-m-d'))->delete();
 
-                // إعادة توليد المواعيد الزمنية
+                // Regenerate time slots
                 $slotDuration = $validated['slot_duration'] ?? 60;
                 $generateDays = $validated['generate_slots_for_days'] ?? 30;
 
                 $this->generateTimeSlotsForDoctor($doctor, $generateDays, $slotDuration);
             }
 
+            // Send notification to doctor if any changes were made
+            if (!empty($updatedFields)) {
+                // Get clinic name if clinic was changed
+                if (isset($validated['clinic_id'])) {
+                    $clinic = Clinic::find($validated['clinic_id']);
+                    $updatedFields['clinic'] = $clinic ? $clinic->name : 'Unknown Clinic';
+                }
+
+                $doctor->user->notify(new DoctorProfileUpdatedNotification($adminName, $updatedFields));
+            }
+
             return response()->json([
                 'message' => 'Doctor updated successfully',
-                'doctor' => $doctor->fresh()->load(['user', 'clinic', 'schedules'])
+                'doctor' => $doctor->fresh()->load(['user', 'clinic', 'schedules']),
+                'changes_made' => !empty($updatedFields)
             ]);
         });
     } catch (\Exception $e) {
@@ -2413,6 +2462,11 @@ public function secretaryBookAppointment(Request $request)
                   ], 403);
               }
 
+
+
+
+
+
         $validator = Validator::make($request->all(), [
             'patient_id' => 'required_without:new_patient|exists:patients,id',
             'new_patient' => 'required_without:patient_id|array',
@@ -2474,6 +2528,18 @@ public function secretaryBookAppointment(Request $request)
                 $patient = Patient::findOrFail($patientId);
             }
 
+
+
+             $blockCheck = $this->checkAndHandlePatientBlocking($patient);
+    if ($blockCheck['blocked']) {
+        return response()->json([
+            'error' => 'account_blocked',
+            'message' => $blockCheck['message']
+        ], 403);
+    }
+
+
+
             $slot = TimeSlot::where('id', $request->time_slot_id)
                 ->where('doctor_id', $request->doctor_id)
                 ->lockForUpdate()
@@ -2509,7 +2575,6 @@ public function secretaryBookAppointment(Request $request)
     $secretary->id
 );
 
-// Update appointment status based on payment method
 if ($request->payment_method === 'wallet') {
     $appointment->update([
         'status' => 'paid',
@@ -2539,6 +2604,33 @@ if ($request->payment_method === 'wallet') {
             ], 500);
         }
     }
+
+
+
+
+
+
+
+protected function checkAndHandlePatientBlocking($patient)
+{
+    $absentCount = Appointment::where('patient_id', $patient->id)
+        ->where('status', 'absent')
+        ->count();
+
+    if ($absentCount >= 3) {
+        $patient->user->notify(new PatientBlockedNotification($absentCount));
+
+        return [
+            'blocked' => true,
+            'absent_count' => $absentCount,
+            'message' => 'Your account has been blocked due to multiple missed appointments. Please contact the clinic center.'
+        ];
+    }
+
+    return ['blocked' => false];
+}
+
+
 
 protected function processAppointmentPayment($appointment, $patient, $paymentMethod, $secretaryId)
 {

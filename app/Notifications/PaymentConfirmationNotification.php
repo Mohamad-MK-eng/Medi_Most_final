@@ -17,7 +17,7 @@ class PaymentConfirmationNotification extends Notification implements ShouldQueu
     public function __construct(Payment $payment)
     {
         $this->payment = $payment;
-        $this->afterCommit = true; // Set it here instead of declaring the property
+        $this->afterCommit = true;
     }
 
     public function via(object $notifiable): array

@@ -15,10 +15,8 @@ class AppointmentService
         return DB::transaction(function () use ($patientId, $slotId, $reason, $paymentMethod) {
             $slot = TimeSlot::with('doctor')->findOrFail($slotId);
 
-            // Mark slot as booked
             $slot->update(['is_booked' => true]);
 
-            // Create appointment
             return Appointment::create([
                 'patient_id' => $patientId,
                 'doctor_id' => $slot->doctor_id,
@@ -37,7 +35,5 @@ class AppointmentService
 
     public function generateTimeSlots($doctorId, $startDate, $weeks = 2)
     {
-        // Implementation for generating slots
-        // Would use doctor's schedule to create available time slots
-    }
+   }
 }

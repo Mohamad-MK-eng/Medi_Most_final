@@ -21,7 +21,7 @@ class DoctorAppointmentBooked extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['database']; // Doctors might prefer in-app notifications
+        return ['database'];
     }
 
     public function toArray(object $notifiable): array

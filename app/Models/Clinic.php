@@ -74,7 +74,7 @@ public function wallet()
         $path = $iconFile->store('clinic_icons', 'public');
         $filename = basename($path);
 
-        $this->image_path = $filename; // تخزين اسم الملف فقط
+        $this->image_path = $filename;
         $this->save();
 
         return true;

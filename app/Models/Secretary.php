@@ -89,7 +89,6 @@ class Secretary extends Model
 
 
 
-    // Helper methods
     public function getPerformanceMetrics()
     {
         return $this->performance_metrics;

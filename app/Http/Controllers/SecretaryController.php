@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+use App\Notifications\PatientUnblockedNotification;
 
 use App\Models\Appointment;
 use App\Models\MedicalCenterWallet;
@@ -176,7 +177,7 @@ class SecretaryController extends Controller
         if (!Auth::user()->hasRole('secretary')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-
+        $unblockedBy= Auth::user()->name;
         $validated = $request->validate([
             'patient_id' => 'required|exists:patients,id',
         ]);
@@ -193,6 +194,8 @@ class SecretaryController extends Controller
                 'cancelled_by' => Auth::id(),
             ]);
         }
+            $patient->user->notify(new PatientUnblockedNotification($unblockedBy));
+
         return response()->json('message:block removed');
     }
 

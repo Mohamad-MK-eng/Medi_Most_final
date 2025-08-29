@@ -5,11 +5,16 @@ namespace App\Http\Controllers;
 use App\Models\Appointment;
 use App\Models\Doctor;
 use App\Models\DoctorSchedule;
+use App\Models\MedicalCenterWallet;
+use App\Models\MedicalCenterWalletTransaction;
 use App\Models\Patient;
+use App\Models\Payment;
 use App\Models\Prescription;
 use App\Models\Report;
 use App\Models\TimeSlot;
 use App\Models\User;
+use App\Models\WalletTransaction;
+use App\Notifications\EmergencyAppointmentCancellationNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -1210,114 +1215,221 @@ class DoctorController extends Controller
 
 
 
+public function emergencyCancelAppointments(Request $request)
+{
+    $doctor = Auth::user()->doctor;
 
+    if (!$doctor) {
+        return response()->json(['message' => 'Doctor profile not found'], 404);
+    }
 
+    $validated = $request->validate([
+        'appointment_ids' => 'required|array',
+        'appointment_ids.*' => 'exists:appointments,id',
+        'reason' => 'required|string|max:500',
+        'is_emergency' => 'required|boolean'
+    ]);
 
-    public function emergencyCancelAppointments(Request $request)
-    {
-        $doctor = Auth::user()->doctor;
+    date_default_timezone_set('Asia/Damascus');
+    $nowLocal = Carbon::now('Asia/Damascus');
 
-        if (!$doctor) {
-            return response()->json(['message' => 'Doctor profile not found'], 404);
-        }
+    return DB::transaction(function () use ($doctor, $validated, $nowLocal) {
+        $results = [
+            'cancelled' => [],
+            'already_cancelled' => [],
+            'not_eligible' => []
+        ];
 
-        $validated = $request->validate([
-            'appointment_ids' => 'required|array',
-            'appointment_ids.*' => 'exists:appointments,id',
-            'reason' => 'required|string|max:500',
-            'is_emergency' => 'required|boolean'
-        ]);
+        foreach ($validated['appointment_ids'] as $appointmentId) {
+            try {
+                // ADD timeSlot to the eager loading
+                $appointment = Appointment::with(['patient.user', 'clinic', 'payments', 'timeSlot'])->find($appointmentId);
 
-        date_default_timezone_set('Asia/Damascus');
-        $nowLocal = Carbon::now('Asia/Damascus');
+                if (!$appointment) {
+                    $results['not_eligible'][] = [
+                        'id' => $appointmentId,
+                        'reason' => 'Appointment not found'
+                    ];
+                    continue;
+                }
 
-        return DB::transaction(function () use ($doctor, $validated, $nowLocal) {
-            $results = [
-                'cancelled' => [],
-                'already_cancelled' => [],
-                'not_eligible' => []
-            ];
+                if ($appointment->doctor_id != $doctor->id) {
+                    $results['not_eligible'][] = [
+                        'id' => $appointmentId,
+                        'reason' => 'Does not belong to this doctor'
+                    ];
+                    continue;
+                }
 
-            foreach ($validated['appointment_ids'] as $appointmentId) {
-                try {
-                    $appointment = Appointment::find($appointmentId);
-
-                    // Basic validation
-                    if (!$appointment) {
-                        $results['not_eligible'][] = [
-                            'id' => $appointmentId,
-                            'reason' => 'Appointment not found'
-                        ];
-                        continue;
-                    }
-
-                    if ($appointment->doctor_id != $doctor->id) {
-                        $results['not_eligible'][] = [
-                            'id' => $appointmentId,
-                            'reason' => 'Does not belong to this doctor'
-                        ];
-                        continue;
-                    }
-
-                    // Handle different statuses
-                    if ($appointment->status === 'cancelled') {
-                        $results['already_cancelled'][] = [
-                            'id' => $appointment->id,
-                            'patient_name' => $appointment->patient->user->name,
-                            'original_date' => $appointment->appointment_date->format('Y-m-d h:i A'),
-                            'cancelled_at' => $appointment->cancelled_at->format('Y-m-d h:i A')
-                        ];
-                        continue;
-                    }
-
-                    if ($appointment->status !== 'confirmed') {
-                        $results['not_eligible'][] = [
-                            'id' => $appointment->id,
-                            'reason' => 'Cannot cancel ' . $appointment->status . ' appointment'
-                        ];
-                        continue;
-                    }
-
-                    if ($appointment->appointment_date < $nowLocal) {
-                        $results['not_eligible'][] = [
-                            'id' => $appointment->id,
-                            'reason' => 'Cannot cancel past appointment'
-                        ];
-                        continue;
-                    }
-
-                    // Proceed with cancellation
-                    $appointment->update([
-                        'status' => 'cancelled',
-                        'cancelled_at' => $nowLocal,
-                        'cancellation_reason' => $validated['reason'],
-                        'is_emergency_cancellation' => $validated['is_emergency']
-                    ]);
-
-
-                    $results['cancelled'][] = [
+                if ($appointment->status === 'cancelled') {
+                    $results['already_cancelled'][] = [
                         'id' => $appointment->id,
                         'patient_name' => $appointment->patient->user->name,
                         'original_date' => $appointment->appointment_date->format('Y-m-d h:i A'),
-                        'new_status' => 'cancelled'
+                        'cancelled_at' => $appointment->cancelled_at->format('Y-m-d h:i A')
                     ];
-                } catch (\Exception $e) {
-                    $results['not_eligible'][] = [
-                        'id' => $appointmentId,
-                        'reason' => 'Error: ' . $e->getMessage()
-                    ];
+                    continue;
                 }
-            }
 
-            return response()->json([
-                'message' => 'Cancellation processed',
-                'results' => $results,
-                'summary' => [
-                    'successfully_cancelled' => count($results['cancelled']),
-                    'previously_cancelled' => count($results['already_cancelled']),
-                    'not_eligible' => count($results['not_eligible'])
-                ]
-            ]);
-        });
+                if ($appointment->status !== 'confirmed') {
+                    $results['not_eligible'][] = [
+                        'id' => $appointment->id,
+                        'reason' => 'Cannot cancel ' . $appointment->status . ' appointment'
+                    ];
+                    continue;
+                }
+
+                if ($appointment->appointment_date < $nowLocal) {
+                    $results['not_eligible'][] = [
+                        'id' => $appointment->id,
+                        'reason' => 'Cannot cancel past appointment'
+                    ];
+                    continue;
+                }
+
+                // Check for time slot and free it
+                $timeSlot = TimeSlot::where('id', $appointment->time_slot_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($timeSlot) {
+                    $timeSlot->update(['is_booked' => false]);
+                }
+
+                // Proceed with cancellation
+                $appointment->update([
+                    'status' => 'cancelled',
+                    'cancelled_at' => $nowLocal,
+                    'cancellation_reason' => $validated['reason'],
+                    'is_emergency_cancellation' => $validated['is_emergency']
+                ]);
+
+                // Process refund if payment exists
+                $payment = Payment::where('appointment_id', $appointment->id)
+                    ->where('method', 'wallet')
+                    ->where('status', 'paid')
+                    ->first();
+
+                $refundAmount = 0;
+                $discountApplied = 0;
+                $originalAmount = 0;
+
+                if ($payment) {
+                    $refundResult = $this->processWalletRefund($appointment, $payment);
+                    $refundAmount = $refundResult['refund_amount'];
+                    $discountApplied = $refundResult['discount_applied'];
+                    $originalAmount = $refundResult['original_amount'];
+
+                    $appointment->patient->refresh();
+
+                    \Log::info("Refund processed for emergency cancelled appointment {$appointment->id}", [
+                        'patient_id' => $appointment->patient->id,
+                        'refund_amount' => $refundAmount,
+                        'discount_applied' => $discountApplied,
+                        'patient_new_balance' => $appointment->patient->wallet_balance
+                    ]);
+                }
+
+                $appointment->patient->user->notify(new EmergencyAppointmentCancellationNotification(
+                    $appointment,
+                    $doctor->user->name,
+                    $validated['reason'],
+                    $validated['is_emergency']
+                ));
+
+                $results['cancelled'][] = [
+                    'id' => $appointment->id,
+                    'patient_name' => $appointment->patient->user->name,
+                    'original_date' => $appointment->appointment_date->format('Y-m-d h:i A'),
+                    'new_status' => 'cancelled',
+                    'refund_processed' => $payment ? true : false,
+                    'refund_amount' => $refundAmount,
+                    'discount_applied' => $discountApplied
+                ];
+
+            } catch (\Exception $e) {
+                $results['not_eligible'][] = [
+                    'id' => $appointmentId,
+                    'reason' => 'Error: ' . $e->getMessage()
+                ];
+            }
+        }
+
+        return response()->json([
+            'message' => 'Cancellation processed',
+            'results' => $results,
+            'summary' => [
+                'successfully_cancelled' => count($results['cancelled']),
+                'previously_cancelled' => count($results['already_cancelled']),
+                'not_eligible' => count($results['not_eligible'])
+            ]
+        ]);
+    });
+}
+
+
+    public function processWalletRefund(Appointment $appointment, Payment $payment)
+    {
+        $originalAmount = $appointment->price;
+
+
+          $discountPercentage = 5;
+    $discountAmount = ($originalAmount * $discountPercentage) / 100;
+
+        $refundAmount =$originalAmount-$discountAmount;
+                $patient = $appointment->patient;
+
+        $medicalCenterWallet = MedicalCenterWallet::lockForUpdate()->firstOrCreate([], ['balance' => 0]);
+
+        if ($medicalCenterWallet->balance < $originalAmount) {
+            throw new \Exception('Medical center wallet has insufficient funds for refund');
+        }
+
+        $patientBalanceBefore = $patient->wallet_balance;
+        $medicalBalanceBefore = $medicalCenterWallet->balance;
+
+        $patient->wallet_balance = $patientBalanceBefore + $refundAmount;
+        $patient->save();
+
+        $medicalCenterWallet->balance = $medicalBalanceBefore - $refundAmount;
+        $medicalCenterWallet->save();
+
+        WalletTransaction::create([
+            'patient_id' => $patient->id,
+            'amount' => $refundAmount,
+            'type' => 'refund',
+            'reference' => 'APT-' . $appointment->id,
+            'balance_before' => $patientBalanceBefore,
+            'balance_after' => $patient->wallet_balance,
+            'notes' => 'Refund for cancelled appointment #' . $appointment->id .
+                  ' (5% discount applied: -$' . number_format($discountAmount, 2) . ')'
+    ]);
+
+        MedicalCenterWalletTransaction::create([
+            'medical_wallet_id' => $medicalCenterWallet->id,
+            'clinic_id' => $appointment->clinic_id,
+            'amount' => $refundAmount,
+            'type' => 'refund',
+            'reference' => 'APT-' . $appointment->id,
+            'balance_before' => $medicalBalanceBefore,
+            'balance_after' => $medicalCenterWallet->balance,
+            'notes' => 'Refund for cancelled appointment #' . $appointment->id .
+                  ' (5% discount applied: -$' . number_format($discountAmount, 2) . ')'
+    ]);
+
+        $payment->update([
+            'status' => 'refunded',
+            'refunded_at' => now(),
+            'refund_amount' => $refundAmount,
+            'discount_applied'=>$discountAmount
+        ]);
+
+        return [
+          'refund_amount' => $refundAmount,
+        'discount_applied' => $discountAmount,
+        'original_amount' => $originalAmount
+        ];
     }
+
+
 }

@@ -14,6 +14,7 @@ use App\Notifications\AppointmentCancelled;
 use App\Models\MedicalCenterWallet;
 use App\Models\MedicalCenterWalletTransaction;
 use App\Models\Patient;
+use App\Notifications\AppointmentCancelledPatientNotification;
 use App\Notifications\AppointmentConfirmationNotification;
 use App\Services\AppointmentService;
 use Illuminate\Http\Request;
@@ -24,6 +25,7 @@ use Carbon\Carbon;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Notification;
 use App\Notifications\InvoicePaid;
+use App\Notifications\PatientBlockedNotification;
 use Hash;
 
 class AppointmentController extends Controller
@@ -65,16 +67,16 @@ class AppointmentController extends Controller
 
 
 
-           $absentCount = Appointment::where('patient_id', $patient->id)
-        ->where('status', 'absent')
-        ->count();
-
-    if ($absentCount >= 3) {
+         $blockCheck = $this->checkAndHandlePatientBlocking($patient);
+    if ($blockCheck['blocked']) {
         return response()->json([
             'error' => 'account_blocked',
-            'message' => 'Your account has been blocked due to multiple missed appointments. Please contact the clinic center.'
+            'message' => $blockCheck['message']
         ], 403);
     }
+
+
+
         $validated = $request->validate([
             'doctor_id' => 'required|exists:doctors,id',
             'slot_id' => 'required|exists:time_slots,id',
@@ -233,6 +235,28 @@ $status = 'confirmed'; // Default status
         }
     });
 }
+
+
+
+protected function checkAndHandlePatientBlocking($patient)
+{
+    $absentCount = Appointment::where('patient_id', $patient->id)
+        ->where('status', 'absent')
+        ->count();
+
+    if ($absentCount >= 3) {
+        $patient->user->notify(new PatientBlockedNotification($absentCount));
+
+        return [
+            'blocked' => true,
+            'absent_count' => $absentCount,
+            'message' => 'Your account has been blocked due to multiple missed appointments. Please contact the clinic center.'
+        ];
+    }
+
+    return ['blocked' => false];
+}
+
 
 protected function getPaymentStatus($appointment)
 {
@@ -1006,6 +1030,12 @@ protected function emptyAppointmentSlot(Appointment $appointment)
                 $discountApplied = $refundResult['discount_applied'];
 
                 $patient->refresh();
+
+
+
+
+
+
 
                 \Log::info("Refund processed for appointment {$appointment->id}", [
                     'patient_id' => $patient->id,

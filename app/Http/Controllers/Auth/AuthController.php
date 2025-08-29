@@ -94,7 +94,7 @@ class AuthController extends Controller
         if ($user->role->name === 'patient' || $user->role->name === 'doctor') {
 
 
-
+/*
             if (!$user->hasVerifiedEmail()) {
                 Auth::logout();
 
@@ -105,7 +105,7 @@ class AuthController extends Controller
                     'user_id' => $user->id
                 ], 403);
             }
-
+*/
 
 
             return response()->json([
