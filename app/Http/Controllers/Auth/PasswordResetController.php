@@ -19,7 +19,7 @@ class PasswordResetController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (!$user) {
-            return response()->json(['error' => 'User not found with this email address'], 404);
+            return response()->json(['message' => 'User not found with this email address'], 404);
         }
 
         $code = VerificationCode::generateCode(4);
@@ -38,7 +38,7 @@ class PasswordResetController extends Controller
         return response()->json([
             'message' => 'Verification code sent to your email',
             'expires_in' => 15
-        ]);
+        ],200);
     }
 
 
@@ -54,7 +54,7 @@ class PasswordResetController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (!$user) {
-            return response()->json(['error' => 'User not found'], 404);
+            return response()->json(['message' => 'User not found'], 404);
         }
 
         $verificationCode = VerificationCode::where('user_id', $user->id)
@@ -62,12 +62,12 @@ class PasswordResetController extends Controller
             ->first();
 
         if (!$verificationCode) {
-            return response()->json(['error' => 'Invalid verification code'], 400);
+            return response()->json(['message' => 'Invalid verification code'], 400);
         }
 
         if ($verificationCode->isExpired()) {
             $verificationCode->delete();
-            return response()->json(['error' => 'Verification code has expired'], 400);
+            return response()->json(['message' => 'Verification code has expired'], 400);
         }
 
         $user->update([

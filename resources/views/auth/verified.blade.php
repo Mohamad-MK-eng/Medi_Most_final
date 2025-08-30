@@ -28,7 +28,7 @@
             <p>{{ session('error') }}</p>
         @else
             <div class="success">✓</div>
-            <h1>Email Verified Successfully!</h1>
+            <h1>Email Verified Successfully</h1>
             <p>Your email address has been verified. You can now log in to your account.</p>
         @endif
 

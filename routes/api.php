@@ -307,7 +307,9 @@ Route::middleware(['auth:api', ApiAuthMiddleware::class])->group(function () {
              Route::get('patients/{patient}/profile',[DoctorController::class,'getPatientDetails']); // tested
             Route::get('patients/{patient}/documents',[DoctorController::class,'getPatientDocuments']);//tested
             Route::get('documents/{document}/prescriptions',[DoctorController::class,'getPatientReport']); //tested
-                Route::post('/appointments/{appointment}/reports', [DoctorController::class, 'SubmitMedicalReport']); //tessted
+                Route::post('/appointments/{appointment}/reports', [DoctorController::class, 'SubmitMedicalReport']);
+                            Route::patch('/activity',[ DoctorController::class , 'updateActivityStatus']) ;
+ //tessted
         });
     });
 
