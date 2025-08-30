@@ -19,7 +19,7 @@ use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Notifications\PatientBlockedNotification;
 use App\Notifications\DoctorProfileUpdatedNotification;
-
+use App\Notifications\WalletFundsAddedNotification;
 use Auth;
 use Carbon\Carbon;
 use DB;
@@ -2197,6 +2197,16 @@ public function addToPatientWallet(Request $request)
         $validated['notes'] ?? 'Added by secretary',
         Auth::user()->id
     );
+
+
+     $patient->user->notify(new WalletFundsAddedNotification(
+                $validated['amount'],
+                $patient->fresh()->wallet_balance,
+                $validated['notes'] ?? null
+            ));
+
+
+
 
     // Simplify the success response since we've already validated
     return response()->json([
