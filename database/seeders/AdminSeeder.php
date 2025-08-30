@@ -114,7 +114,6 @@ class AdminSeeder extends Seeder
             ]
         );
 
-        // Create doctor schedules
         $scheduleData = [
             ['day' => 'monday', 'start_time' => '09:00:00', 'end_time' => '17:00:00'],
             ['day' => 'wednesday', 'start_time' => '09:00:00', 'end_time' => '17:00:00'],
@@ -128,7 +127,6 @@ class AdminSeeder extends Seeder
             );
         }
 
-        // Create time slots for the next 7 days
         $timeSlots = [];
         $appointmentDate = now()->addDays(7)->format('Y-m-d');
 
@@ -186,13 +184,11 @@ class AdminSeeder extends Seeder
 
         MedicalCenterWallet::firstOrCreate([], ['balance' => 0]);
 
-        // Get a specific time slot for the appointment
         $appointmentSlot = TimeSlot::where('doctor_id', $doctor->id)
             ->where('date', $appointmentDate)
             ->where('start_time', '09:00:00')
             ->first();
 
-        // Create appointment if slot exists
         if ($appointmentSlot) {
             $appointmentSlot->update(['is_booked' => true]);
 
